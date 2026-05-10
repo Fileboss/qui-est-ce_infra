@@ -1,0 +1,15 @@
+qui-est-qui.lepgu.fr {
+    reverse_proxy front:80
+}
+
+api.qui-est-qui.lepgu.fr {
+    reverse_proxy back:8080
+}
+
+auth.qui-est-qui.lepgu.fr {
+    reverse_proxy keycloak:8080
+}
+
+s3.qui-est-qui.lepgu.fr {
+    reverse_proxy minio:9000
+}

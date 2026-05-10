@@ -1,0 +1,48 @@
+{
+  "realm": "qui-est-ce",
+  "enabled": true,
+  "roles": {
+    "realm": [
+      {"name": "player", "description": "Can join and play games"},
+      {
+        "name": "admin",
+        "description": "Can manage packs and cards",
+        "composite": true,
+        "composites": {"realm": ["player"]}
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "qui-est-ce-back",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "REPLACE_WITH_PROD_SECRET",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": true,
+      "redirectUris": ["https://qui-est-qui.lepgu.fr/*"],
+      "webOrigins": ["https://qui-est-qui.lepgu.fr"]
+    },
+    {
+      "clientId": "qui-est-ce-front",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "redirectUris": ["https://qui-est-qui.lepgu.fr/*"],
+      "webOrigins": ["https://qui-est-qui.lepgu.fr"],
+      "protocolMappers": [
+        {
+          "name": "backend-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "qui-est-ce-back",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ]
+}
