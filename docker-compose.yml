@@ -38,6 +38,7 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       OIDC_AUTH_SERVER_URL: https://auth.qui-est-qui.lepgu.fr/realms/qui-est-ce
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      KEYCLOAK_URL: http://keycloak:8080
     depends_on:
       postgres:
         condition: service_healthy

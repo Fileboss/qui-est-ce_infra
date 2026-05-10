@@ -44,5 +44,15 @@
         }
       ]
     }
+  ],
+  "users": [
+    {
+      "username": "service-account-qui-est-ce-back",
+      "enabled": true,
+      "serviceAccountClientId": "qui-est-ce-back",
+      "clientRoles": {
+        "realm-management": ["manage-users"]
+      }
+    }
   ]
 }
