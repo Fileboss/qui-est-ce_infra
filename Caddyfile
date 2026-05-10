@@ -1,5 +1,13 @@
 qui-est-qui.lepgu.fr {
-    reverse_proxy front:80
+    handle /api/* {
+        reverse_proxy back:8080
+    }
+    handle /ws/* {
+        reverse_proxy back:8080
+    }
+    handle {
+        reverse_proxy front:80
+    }
 }
 
 api.qui-est-qui.lepgu.fr {
