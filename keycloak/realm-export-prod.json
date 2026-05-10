@@ -17,11 +17,22 @@
       "clientId": "qui-est-ce-back",
       "enabled": true,
       "publicClient": false,
-      "secret": "REPLACE_WITH_PROD_SECRET",
-      "serviceAccountsEnabled": true,
+      "secret": "${OIDC_CLIENT_SECRET}",
+      "serviceAccountsEnabled": false,
       "standardFlowEnabled": true,
       "redirectUris": ["https://qui-est-qui.lepgu.fr/*"],
       "webOrigins": ["https://qui-est-qui.lepgu.fr"]
+    },
+    {
+      "clientId": "qui-est-ce-admin",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "${KEYCLOAK_ADMIN_SECRET}",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [],
+      "webOrigins": []
     },
     {
       "clientId": "qui-est-ce-front",
@@ -47,9 +58,9 @@
   ],
   "users": [
     {
-      "username": "service-account-qui-est-ce-back",
+      "username": "service-account-qui-est-ce-admin",
       "enabled": true,
-      "serviceAccountClientId": "qui-est-ce-back",
+      "serviceAccountClientId": "qui-est-ce-admin",
       "clientRoles": {
         "realm-management": ["manage-users"]
       }

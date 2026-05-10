@@ -38,6 +38,7 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       OIDC_AUTH_SERVER_URL: https://auth.qui-est-qui.lepgu.fr/realms/qui-est-ce
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      KEYCLOAK_ADMIN_SECRET: ${KEYCLOAK_ADMIN_SECRET}
       KEYCLOAK_URL: http://keycloak:8080
     depends_on:
       postgres:
@@ -62,6 +63,9 @@ services:
       KC_HEALTH_ENABLED: "true"
       KEYCLOAK_ADMIN: ${KC_BOOTSTRAP_ADMIN_USERNAME}
       KEYCLOAK_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD}
+      # Substituted into realm-export-prod.json at import time (${VAR} placeholders).
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      KEYCLOAK_ADMIN_SECRET: ${KEYCLOAK_ADMIN_SECRET}
     volumes:
       - keycloak_data:/opt/keycloak/data
       - ./keycloak/realm-export-prod.json:/opt/keycloak/data/import/realm.json:ro
