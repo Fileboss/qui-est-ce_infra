@@ -51,7 +51,12 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
     restart: unless-stopped
-    command: start --import-realm --optimized
+    # Not --optimized: KC_DB and KC_HEALTH_ENABLED are build-time options that
+    # need kc.sh build to persist. Without that pre-build pass --optimized
+    # refuses to apply them and the container crash-loops. Letting Keycloak
+    # build at every startup costs ~10s; revisit with a custom pre-built image
+    # if we ever need faster cold starts.
+    command: start --import-realm
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres/keycloak
