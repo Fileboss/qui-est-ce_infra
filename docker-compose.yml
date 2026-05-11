@@ -75,7 +75,10 @@ services:
       - keycloak_data:/opt/keycloak/data
       - ./keycloak/realm-export-prod.json:/opt/keycloak/data/import/realm.json:ro
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"]
+      # HTTP/1.0 (not /1.1): defaults to Connection: close, so Keycloak flushes
+      # the response and closes the socket. /1.1 keeps the connection alive and
+      # cat blocks past the 5s timeout, even though the response was sent.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
       interval: 10s
       timeout: 5s
       retries: 30
