@@ -1,7 +1,12 @@
 qui-est-qui.lepgu.fr {
-    handle /api/* {
+    # handle_path strips the matched prefix before forwarding, mirroring the
+    # frontend's dev proxy.conf.json which rewrites ^/api -> "". The back
+    # exposes endpoints at /pack, /game/*, etc. — no /api prefix.
+    handle_path /api/* {
         reverse_proxy back:8080
     }
+    # WebSockets keep the /ws prefix: backend endpoints are /ws/game/{id} and
+    # /ws/games literally, and the dev proxy passes them through unchanged.
     handle /ws/* {
         reverse_proxy back:8080
     }
