@@ -20,6 +20,13 @@ api.qui-est-qui.lepgu.fr {
 }
 
 auth.qui-est-qui.lepgu.fr {
+    # Gate the admin console and the master realm (where admin login happens)
+    # behind HTTP Basic Auth so they are not exposed to the open internet.
+    # The qui-est-ce realm and /resources/* stay open for the app's OIDC flow.
+    @kc_admin path /admin/* /realms/master/*
+    basic_auth @kc_admin {
+        admin {$KC_ADMIN_BASIC_AUTH_HASH}
+    }
     reverse_proxy keycloak:8080
 }
 
