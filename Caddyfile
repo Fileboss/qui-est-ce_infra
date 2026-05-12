@@ -25,7 +25,7 @@ auth.qui-est-qui.lepgu.fr {
 
     @admin_from_home {
         path /admin* /admin/*
-        remote_ip 88.182.11.181 2a01:e0a:d82:ed50:edec:7440:be84:55e3::/64
+        remote_ip 88.182.11.181
     }
 
     handle @admin_from_home {
