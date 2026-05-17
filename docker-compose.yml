@@ -43,6 +43,7 @@ services:
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
       KEYCLOAK_ADMIN_SECRET: ${KEYCLOAK_ADMIN_SECRET}
       KEYCLOAK_URL: http://keycloak:8080
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
     depends_on:
       postgres:
         condition: service_healthy
