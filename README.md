@@ -49,6 +49,7 @@ only; revisit if a third app shows up.
 ├── Caddyfile
 ├── .env.example
 ├── postgres/init/00-keycloak-db.sh          # creates the keycloak DB on first volume init
+├── DEPLOY-palais-divin.md                   # step-by-step deploy runbook
 ├── keycloak/
 │   ├── realm-export-prod.json               # qui-est-ce realm  (owned by qui-est-ce_back)
 │   └── realm-palaisdivin-prod.json          # palaisdivin realm (owned by palais_divin-back)
@@ -109,38 +110,29 @@ docker push ghcr.io/fileboss/palais-divin-front:latest
 Push the palais-divin images **before** the first `docker compose up -d`:
 `pull_policy: always` means a missing image aborts the whole `up`.
 
-## First boot
+## Deploying
+
+**For palais-divin, follow [`DEPLOY-palais-divin.md`](DEPLOY-palais-divin.md).**
+That is the authoritative runbook: DNS records, image builds, which secrets to
+generate and which to leave alone, first boot, the first-admin bootstrap,
+redeploys, rollback, and symptom-by-symptom troubleshooting.
+
+### First boot, from nothing
 
 1. SSH to the VPS, clone this repo, `cd` into it.
-2. Copy `.env.example` to `.env` and fill in every secret. Generate each with
-   `openssl rand -hex 32` (hex avoids quoting problems — some values are
-   interpolated into shell healthchecks), except `PALAISDIVIN_SESSION_SECRET`
-   which must be base64: `openssl rand -base64 32`.
-   The palais-divin backend refuses to start with a blank Keycloak client secret,
-   and the Keycloak realm import bakes `PALAISDIVIN_BACKEND_CLIENT_SECRET` in on
-   first import — so set it before the first `up`, not after.
+2. Copy `.env.example` to `.env` and fill in every secret. `openssl rand -hex 32`
+   for each, except `PALAISDIVIN_SESSION_SECRET` which must be base64
+   (`openssl rand -base64 32` — it is a raw AES key, not a passphrase).
+   `PALAISDIVIN_BACKEND_CLIENT_SECRET` is baked into the Keycloak realm on first
+   import, so it has to be right *before* the first `up`.
 3. `docker compose pull && docker compose up -d`.
 4. `docker compose logs -f keycloak` until both realms are imported (`qui-est-ce`
    and `palaisdivin`), then `docker compose logs -f back palaisdivin-back`.
 5. `./scripts/smoke-palais-divin.sh`.
 
-### Bootstrapping the first palais-divin user
-
-palais-divin is invitation-only: `POST /api/v1/admin/invitations` requires an
-`ADMIN` token, and there is no self-service signup. The prod realm ships with **no
-users** (unlike the dev realm), so the first one is created by hand:
-
-1. `https://auth.qui-est-qui.lepgu.fr` → log in as the bootstrap admin → switch to
-   the **palaisdivin** realm → **Users** → create a user, set a non-temporary
-   password, assign the **ADMIN** realm role.
-2. Log in at `https://palais-divin.lepgu.fr` as that user and grab its access token
-   (DevTools → any `/api/*` request → `Authorization` header), then:
-   `curl -X POST -H "Authorization: Bearer $TOKEN" https://api.palais-divin.lepgu.fr/api/v1/admin/invitations`
-   The response carries the signup link.
-3. Open that link and sign up. **This** is the account to actually use the app with:
-   signup is what creates the Postgres `users` row, and every `/api/v1/user/**`
-   endpoint resolves the caller through it. The hand-made Keycloak user has no such
-   row, so it can issue invitations but cannot rate or follow anything.
+palais-divin needs one more step after that — it is invitation-only and its prod
+realm ships with no users, so the first account is created by hand. See
+[`DEPLOY-palais-divin.md` §8](DEPLOY-palais-divin.md#8-bootstrap-the-first-user).
 
 ### qui-est-ce, on an existing deployment
 
