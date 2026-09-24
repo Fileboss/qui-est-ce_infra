@@ -1,0 +1,54 @@
+{
+  "realm": "palaisdivin",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "accessTokenLifespan": 3600,
+  "passwordPolicy": "length(8)",
+  "bruteForceProtected": true,
+  "roles": {
+    "realm": [
+      { "name": "USER", "description": "Standard user (RBAC level 2)" },
+      { "name": "ADMIN", "description": "Administrator (RBAC level 3)" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "palais-divin-frontend",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["https://palais-divin.lepgu.fr/*"],
+      "webOrigins": ["https://palais-divin.lepgu.fr"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://palais-divin.lepgu.fr/*"
+      }
+    },
+    {
+      "clientId": "palais-divin-backend",
+      "enabled": true,
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${PALAISDIVIN_BACKEND_CLIENT_SECRET}"
+    }
+  ],
+  "users": [
+    {
+      "username": "service-account-palais-divin-backend",
+      "enabled": true,
+      "serviceAccountClientId": "palais-divin-backend",
+      "clientRoles": {
+        "realm-management": ["realm-admin"]
+      }
+    }
+  ]
+}

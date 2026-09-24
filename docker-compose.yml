@@ -1,4 +1,19 @@
+# Shared VPS stack for every *.lepgu.fr app.
+#
+# Two apps live here:
+#   - qui-est-ce   → services `front`, `back`, `postgres` (+ shared caddy/keycloak/minio)
+#   - palais-divin → services prefixed `palaisdivin-`
+#
+# Shared by both: `caddy` (the only thing publishing ports), `keycloak` (one
+# instance, one realm per app) and `minio` (one instance, one bucket per app).
+# Everything else is per-app so one app's data store can never break the other's.
+#
+# The unprefixed `front`/`back`/`postgres` names predate the multi-app layout and
+# belong to qui-est-ce; they are left as-is deliberately — renaming them would
+# churn the Caddyfile and recreate containers of a live site for cosmetics.
+
 services:
+  # ============================================================== shared ====
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
@@ -17,7 +32,95 @@ services:
       - back
       - keycloak
       - minio
+      # Deliberately NOT the palaisdivin-* services: depends_on would tie Caddy's
+      # startup to them, so a bad palais-divin image could take qui-est-ce
+      # offline. Caddy resolves upstreams at dial time — a missing container just
+      # 502s its own vhost.
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    restart: unless-stopped
+    # Not --optimized: KC_DB and KC_HEALTH_ENABLED are build-time options that
+    # need kc.sh build to persist. Without that pre-build pass --optimized
+    # refuses to apply them and the container crash-loops. Letting Keycloak
+    # build at every startup costs ~10s; revisit with a custom pre-built image
+    # if we ever need faster cold starts.
+    command: start --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres/keycloak
+      KC_DB_USERNAME: ${KC_DB_USERNAME}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
+      # One hostname for every realm. Changing it would rewrite the issuer of
+      # already-issued qui-est-ce tokens, so palais-divin reuses it as-is:
+      # its issuer is https://auth.qui-est-qui.lepgu.fr/realms/palaisdivin.
+      KC_HOSTNAME: https://auth.qui-est-qui.lepgu.fr
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      KEYCLOAK_ADMIN: ${KC_BOOTSTRAP_ADMIN_USERNAME}
+      KEYCLOAK_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD}
+      # Substituted into the realm JSONs at import time (${VAR} placeholders).
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      KEYCLOAK_ADMIN_SECRET: ${KEYCLOAK_ADMIN_SECRET}
+      PALAISDIVIN_BACKEND_CLIENT_SECRET: ${PALAISDIVIN_BACKEND_CLIENT_SECRET}
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+      # Every file in /import is imported; realms that already exist are skipped
+      # (IGNORE_EXISTING), so adding a second file is safe on a running instance.
+      - ./keycloak/realm-export-prod.json:/opt/keycloak/data/import/realm.json:ro
+      - ./keycloak/realm-palaisdivin-prod.json:/opt/keycloak/data/import/realm-palaisdivin.json:ro
+    healthcheck:
+      # HTTP/1.0 (not /1.1): defaults to Connection: close, so Keycloak flushes
+      # the response and closes the socket. /1.1 keeps the connection alive and
+      # cat blocks past the 5s timeout, even though the response was sent.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  # Idempotent, runs on every `up`. `game-images` is public-read (qui-est-ce
+  # serves its image URLs directly); `palaisdivin-photos` stays private — the
+  # palais-divin backend hands the browser presigned PUT/GET URLs instead.
+  minio-init:
+    image: minio/mc:latest
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+    entrypoint:
+      - sh
+      - -c
+      - |
+        mc alias set local http://minio:9000 "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY" \
+          && mc mb --ignore-existing local/game-images \
+          && mc anonymous set download local/game-images \
+          && mc mb --ignore-existing local/palaisdivin-photos
+
+  # =========================================================== qui-est-ce ====
   front:
     image: ghcr.io/fileboss/qui-est-ce-front:latest
     restart: unless-stopped
@@ -52,45 +155,6 @@ services:
       minio:
         condition: service_healthy
 
-  keycloak:
-    image: quay.io/keycloak/keycloak:26.0
-    restart: unless-stopped
-    # Not --optimized: KC_DB and KC_HEALTH_ENABLED are build-time options that
-    # need kc.sh build to persist. Without that pre-build pass --optimized
-    # refuses to apply them and the container crash-loops. Letting Keycloak
-    # build at every startup costs ~10s; revisit with a custom pre-built image
-    # if we ever need faster cold starts.
-    command: start --import-realm
-    environment:
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres/keycloak
-      KC_DB_USERNAME: ${KC_DB_USERNAME}
-      KC_DB_PASSWORD: ${KC_DB_PASSWORD}
-      KC_HOSTNAME: https://auth.qui-est-qui.lepgu.fr
-      KC_HTTP_ENABLED: "true"
-      KC_PROXY_HEADERS: xforwarded
-      KC_HEALTH_ENABLED: "true"
-      KEYCLOAK_ADMIN: ${KC_BOOTSTRAP_ADMIN_USERNAME}
-      KEYCLOAK_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD}
-      # Substituted into realm-export-prod.json at import time (${VAR} placeholders).
-      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
-      KEYCLOAK_ADMIN_SECRET: ${KEYCLOAK_ADMIN_SECRET}
-    volumes:
-      - keycloak_data:/opt/keycloak/data
-      - ./keycloak/realm-export-prod.json:/opt/keycloak/data/import/realm.json:ro
-    healthcheck:
-      # HTTP/1.0 (not /1.1): defaults to Connection: close, so Keycloak flushes
-      # the response and closes the socket. /1.1 keeps the connection alive and
-      # cat blocks past the 5s timeout, even though the response was sent.
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
-      interval: 10s
-      timeout: 5s
-      retries: 30
-      start_period: 60s
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   # On first volume init, the postgres image creates POSTGRES_DB (the app DB,
   # owned by POSTGRES_USER as superuser) automatically. The init script in
   # /docker-entrypoint-initdb.d/ creates the second DB (keycloak) and its role.
@@ -115,38 +179,118 @@ services:
       retries: 15
       start_period: 20s
 
-  minio:
-    image: minio/minio:latest
+  # ========================================================= palais-divin ====
+  # SvelteKit BFF: it owns the OIDC login flow and proxies /api/* itself,
+  # attaching the bearer token from its encrypted session cookie. Caddy does no
+  # path routing for this app — everything goes to this container.
+  palaisdivin-front:
+    image: ghcr.io/fileboss/palais-divin-front:latest
     restart: unless-stopped
-    command: server /data --console-address ":9001"
+    pull_policy: always
+    mem_limit: 512m
     environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
-    volumes:
-      - minio_data:/data
-    healthcheck:
-      test: ["CMD-SHELL", "mc ready local || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 20s
-
-  minio-init:
-    image: minio/mc:latest
-    restart: "no"
+      # Internal: the browser never sees this.
+      API_BASE_URL: http://palaisdivin-back:8080
+      # Public: the browser is redirected here, so it must be the public issuer.
+      KEYCLOAK_ISSUER_URI: https://auth.qui-est-qui.lepgu.fr/realms/palaisdivin
+      OIDC_CLIENT_ID: palais-divin-frontend
+      PUBLIC_ORIGIN: https://palais-divin.lepgu.fr
+      # adapter-node sits behind a proxy: ORIGIN is what it compares the Origin
+      # header against for form actions. Without it, POSTs are rejected as CSRF.
+      ORIGIN: https://palais-divin.lepgu.fr
+      SESSION_SECRET: ${PALAISDIVIN_SESSION_SECRET}
     depends_on:
+      - palaisdivin-back
+
+  palaisdivin-back:
+    image: ghcr.io/fileboss/palais-divin-back:latest
+    restart: unless-stopped
+    pull_policy: always
+    # Distroless: no shell in the image, so no container healthcheck is possible.
+    # Liveness is observed from outside via GET /actuator/health (permitAll).
+    mem_limit: 1g
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:postgresql://palaisdivin-postgres:5432/palaisdivin
+      SPRING_DATASOURCE_USERNAME: ${PALAISDIVIN_DB_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${PALAISDIVIN_DB_PASSWORD}
+      SPRING_NEO4J_URI: bolt://palaisdivin-neo4j:7687
+      SPRING_NEO4J_AUTHENTICATION_USERNAME: neo4j
+      SPRING_NEO4J_AUTHENTICATION_PASSWORD: ${PALAISDIVIN_NEO4J_PASSWORD}
+      # Must be the PUBLIC issuer: it has to match the `iss` claim Keycloak
+      # stamps (derived from KC_HOSTNAME), and Spring fetches the JWK set from
+      # it. Resolved from inside the container via public DNS, same as
+      # qui-est-ce's back already does with OIDC_AUTH_SERVER_URL.
+      KEYCLOAK_ISSUER_URI: https://auth.qui-est-qui.lepgu.fr/realms/palaisdivin
+      # Admin API (create users at signup) goes over the internal network.
+      KEYCLOAK_BASE_URL: http://keycloak:8080
+      KEYCLOAK_REALM: palaisdivin
+      KEYCLOAK_BACKEND_CLIENT_ID: palais-divin-backend
+      KEYCLOAK_BACKEND_CLIENT_SECRET: ${PALAISDIVIN_BACKEND_CLIENT_SECRET}
+      APP_INVITATION_SIGNUP_BASE_URL: https://palais-divin.lepgu.fr/register
+      # PUBLIC MinIO host, not http://minio:9000 — SigV4 signs the Host header,
+      # so a presigned URL is only valid for the host it was minted against and
+      # the browser uploads/downloads straight to this one.
+      MINIO_ENDPOINT: https://s3.palais-divin.lepgu.fr
+      MINIO_ACCESS_KEY: ${S3_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${S3_SECRET_KEY}
+      MINIO_BUCKET: palaisdivin-photos
+      # No OTLP collector on this VPS yet. Leaving tracing on would make the
+      # exporter retry against localhost:4318 forever; logs keep traceId/spanId
+      # as empty strings. Flip to true once a collector is deployed.
+      MANAGEMENT_TRACING_ENABLED: "false"
+    depends_on:
+      palaisdivin-postgres:
+        condition: service_healthy
+      palaisdivin-neo4j:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
       minio:
         condition: service_healthy
+
+  # Own instance rather than a second database on `postgres`: the backend needs
+  # PostGIS (V1__restaurant.sql runs CREATE EXTENSION postgis, and restaurant
+  # search is GIST-indexed SQL), and swapping the shared postgres:16-alpine
+  # image for postgis/postgis under a live data volume is not worth the risk to
+  # qui-est-ce. POSTGRES_USER is a superuser, which CREATE EXTENSION requires.
+  palaisdivin-postgres:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
     environment:
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
-      S3_SECRET_KEY: ${S3_SECRET_KEY}
-    entrypoint:
-      - sh
-      - -c
-      - |
-        mc alias set local http://minio:9000 "$$S3_ACCESS_KEY" "$$S3_SECRET_KEY" \
-          && mc mb --ignore-existing local/game-images \
-          && mc anonymous set download local/game-images
+      POSTGRES_DB: palaisdivin
+      POSTGRES_USER: ${PALAISDIVIN_DB_USERNAME}
+      POSTGRES_PASSWORD: ${PALAISDIVIN_DB_PASSWORD}
+    volumes:
+      - palaisdivin_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PALAISDIVIN_DB_USERNAME} -d palaisdivin"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
+
+  # Derived read model for the social graph (projected from Postgres via the
+  # transactional outbox). Community edition: the app uses plain Cypher MERGE
+  # only — no APOC, no enterprise-only constraints — so the enterprise image
+  # used in dev/tests buys nothing here and would need a licence.
+  palaisdivin-neo4j:
+    image: neo4j:5.26-community
+    restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      NEO4J_AUTH: neo4j/${PALAISDIVIN_NEO4J_PASSWORD}
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+    volumes:
+      - palaisdivin_neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p '${PALAISDIVIN_NEO4J_PASSWORD}' 'RETURN 1' >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
 
 volumes:
   postgres_data:
@@ -154,3 +298,5 @@ volumes:
   keycloak_data:
   caddy_data:
   caddy_config:
+  palaisdivin_postgres_data:
+  palaisdivin_neo4j_data:
