@@ -91,17 +91,34 @@ All three must print the VPS IP.
 **From the dev machine**, not the VPS. Both builds are self-contained: the
 backend one compiles the jar itself, so no local Maven or Node run is needed.
 
+First, match the VPS's architecture. A dev machine on Apple Silicon builds
+arm64 by default, and an arm64 image will not start on an x86_64 VPS (`exec
+format error`):
+
 ```sh
+ssh fedora@<vps> uname -m
+```
+
+`x86_64` → keep `--platform linux/amd64` below. `aarch64` → drop the flag.
+
+```sh
+docker login ghcr.io -u Fileboss
+
 # Backend — context is the repo ROOT, Dockerfile lives under src/main/docker/
 cd ~/Documents/repos/GitHub/palais_divin-back
-docker build -f src/main/docker/Dockerfile -t ghcr.io/fileboss/palais-divin-back:latest .
-docker push ghcr.io/fileboss/palais-divin-back:latest
+docker buildx build --platform linux/amd64 --push \
+  -f src/main/docker/Dockerfile \
+  -t ghcr.io/fileboss/palais-divin-back:latest .
 
 # Frontend
 cd ~/Documents/repos/GitHub/palais_divin-front
-docker build -t ghcr.io/fileboss/palais-divin-front:latest .
-docker push ghcr.io/fileboss/palais-divin-front:latest
+docker buildx build --platform linux/amd64 --push \
+  -t ghcr.io/fileboss/palais-divin-front:latest .
 ```
+
+`buildx … --push` builds and uploads in one step. Cross-building emulates the
+target architecture through QEMU, so the first backend build takes ~10 minutes;
+later ones reuse the dependency cache.
 
 The first backend build takes a few minutes (it downloads the whole dependency
 tree into the BuildKit cache mount); later ones reuse it.
@@ -469,10 +486,11 @@ consistent by design — give it a few seconds, the worker polls on a schedule.
 ## 9. Redeploying
 
 ```sh
-# dev machine
+# dev machine — same --platform as §3, or the VPS gets an unrunnable image
 cd ~/Documents/repos/GitHub/palais_divin-back
-docker build -f src/main/docker/Dockerfile -t ghcr.io/fileboss/palais-divin-back:latest .
-docker push ghcr.io/fileboss/palais-divin-back:latest
+docker buildx build --platform linux/amd64 --push \
+  -f src/main/docker/Dockerfile \
+  -t ghcr.io/fileboss/palais-divin-back:latest .
 
 # VPS
 cd ~/qui-est-ce_infra
@@ -555,6 +573,7 @@ compose project name (the directory name).
 | `app.keycloak.client-secret must not be blank` | `PALAISDIVIN_BACKEND_CLIENT_SECRET` empty in `.env`. |
 | `Failed to fetch remote JWK set` / connect timeout to `auth.qui-est-qui.lepgu.fr` | The container cannot reach the VPS's own public hostname — see below. |
 | `FlywayValidateException`, `type "geography" does not exist` | The volume was initialised by a non-PostGIS image. `palaisdivin-postgres` must be `postgis/postgis`. |
+| `exec format error`, or the container exits instantly with no Java output | The image was built for the wrong architecture — rebuild with `--platform` matching `uname -m` on the VPS (§3). |
 | `Connection refused` to `palaisdivin-neo4j:7687` | Neo4j still starting; it has a 60s `start_period`. If it persists, check its own logs for a memory error against the 1 GB `mem_limit`. |
 | `password authentication failed` | `PALAISDIVIN_DB_PASSWORD` was changed after the volume was created. The password lives in the volume; either restore the old value or drop the volume. |
 
