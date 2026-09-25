@@ -45,3 +45,28 @@ auth.qui-est-qui.lepgu.fr {
 s3.qui-est-qui.lepgu.fr {
     reverse_proxy minio:9000
 }
+
+# ---------------------------------------------------------------- palais-divin
+
+palais-divin.lepgu.fr {
+    # No path routing, unlike qui-est-qui.lepgu.fr above: the SvelteKit app is a
+    # BFF and handles /api/* in-process (src/routes/api/[...path]/+server.ts),
+    # attaching the bearer token from its session cookie before forwarding to
+    # palaisdivin-back over the internal network. Stripping or rerouting /api
+    # here would break the login flow.
+    reverse_proxy palaisdivin-front:3000
+}
+
+# Direct access to the API. The frontend does not use this host (it goes over the
+# internal network) — it exists for smoke tests, admin calls and debugging.
+api.palais-divin.lepgu.fr {
+    reverse_proxy palaisdivin-back:8080
+}
+
+# Same MinIO instance as s3.qui-est-qui.lepgu.fr, its own bucket. This hostname
+# is load-bearing rather than cosmetic: the backend mints presigned URLs against
+# it (MINIO_ENDPOINT) and SigV4 signs the Host header, so the browser must reach
+# MinIO under exactly this name for the signature to verify.
+s3.palais-divin.lepgu.fr {
+    reverse_proxy minio:9000
+}
