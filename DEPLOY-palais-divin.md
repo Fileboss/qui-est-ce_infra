@@ -35,6 +35,25 @@ and two image builds.
       `docker login ghcr.io -u <github-username>`.
 - [ ] **Docker with BuildKit** on the dev machine (default since Docker 23; the
       backend Dockerfile uses `--mount=type=cache`).
+- [ ] **A `TERM` the VPS recognises.** If you SSH from a terminal whose terminfo
+      entry is not in Fedora's database — Ghostty (`xterm-ghostty`), Kitty,
+      WezTerm — `nano` dies with `ncurses: cannot initialize terminal type` and
+      `less` degrades. Install your entry on the VPS once, from your machine:
+      `infocmp -x "$TERM" | ssh fedora@<vps> -- tic -x -`. Stopgap on the VPS:
+      `export TERM=xterm-256color`.
+
+### 1.1 Read this file on the VPS
+
+Once §4 is done this runbook is checked out there, so read it from disk rather
+than copying commands out of a chat window or a rendered view — those indent
+code blocks, and the indentation comes along with the copy.
+
+```sh
+cat DEPLOY-palais-divin.md          # or: less DEPLOY-palais-divin.md
+```
+
+Every command here is written to survive a sloppy paste: one command per line,
+no heredocs, nothing that depends on leading whitespace.
 
 ---
 
@@ -138,16 +157,31 @@ never travel:
 
 ```sh
 cd ~/qui-est-ce_infra
-cat >> .env <<EOF
-
-PALAISDIVIN_DB_USERNAME=palaisdivin
-PALAISDIVIN_DB_PASSWORD=$(openssl rand -hex 32)
-PALAISDIVIN_NEO4J_PASSWORD=$(openssl rand -hex 32)
-PALAISDIVIN_BACKEND_CLIENT_SECRET=$(openssl rand -hex 32)
-PALAISDIVIN_SESSION_SECRET=$(openssl rand -base64 32)
-EOF
+echo "" >> .env
+echo "PALAISDIVIN_DB_USERNAME=palaisdivin" >> .env
+echo "PALAISDIVIN_DB_PASSWORD=$(openssl rand -hex 32)" >> .env
+echo "PALAISDIVIN_NEO4J_PASSWORD=$(openssl rand -hex 32)" >> .env
+echo "PALAISDIVIN_BACKEND_CLIENT_SECRET=$(openssl rand -hex 32)" >> .env
+echo "PALAISDIVIN_SESSION_SECRET=$(openssl rand -base64 32)" >> .env
 chmod 600 .env
 ```
+
+One independent command per line, deliberately — not a heredoc. A heredoc needs
+its `EOF` terminator at column 0, and pasted blocks routinely arrive indented
+(most renderers indent code blocks), which leaves the shell stuck at a `>`
+continuation prompt swallowing everything you type. `<<-EOF` does not help: it
+strips leading **tabs**, not spaces. With one `>>` per line, indentation is
+irrelevant and a mangled line can be rerun on its own.
+
+Check the result before moving on:
+
+```sh
+tail -7 .env
+```
+
+Five `PALAISDIVIN_*` lines, each with a real value after the `=` — 64 hex
+characters, or 44 base64 for the session secret. An empty value means `openssl`
+did not run: delete those lines and retry.
 
 The formats are not interchangeable:
 
