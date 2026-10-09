@@ -1,0 +1,21 @@
+// Policy Tailscale à coller dans https://login.tailscale.com/admin/acls/file
+// Principe : deny-by-default. Le VPS n'atteint le HP que sur les 2 ports des apps,
+// le HP n'atteint le VPS que sur SSH (dépôt SFTP du backup).
+{
+	"tagOwners": {
+		"tag:vps":     ["autogroup:admin"],
+		"tag:homelab": ["autogroup:admin"],
+	},
+
+	"acls": [
+		// Caddy (VPS) -> Immich (2283) et Vaultwarden (8222)
+		{"action": "accept", "src": ["tag:vps"], "dst": ["tag:homelab:2283,8222"]},
+
+		// Backup : HP -> VPS, SSH/SFTP uniquement
+		{"action": "accept", "src": ["tag:homelab"], "dst": ["tag:vps:22"]},
+
+		// Tes propres appareils (laptop, téléphone) : admin SSH du HP + accès direct aux apps
+		{"action": "accept", "src": ["autogroup:member"], "dst": ["tag:homelab:22,2283,8222"]},
+		{"action": "accept", "src": ["autogroup:member"], "dst": ["tag:vps:22"]},
+	],
+}
