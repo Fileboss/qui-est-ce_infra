@@ -431,7 +431,7 @@ docker compose up -d vaultwarden
    curl -I https://photos.lepgu.fr
    curl -I https://vault.lepgu.fr
    ```
-   Si le premier test timeout : `tailscale status` sur les deux machines, vérifie les ACL, et sur le VPS que le pare-feu autorise le forwarding depuis le réseau Docker vers `tailscale0`. (si `ufw` est actif sur le VPS et bloque le forwarding : `sudo ufw route allow in on <bridge-docker> out on tailscale0`, avec le nom réel du bridge du réseau de Caddy, trouvé via `ip -br link | grep br-`. Essaie d'abord sans : c'est souvent inutile.)
+   Si le premier test timeout : `tailscale status` sur les deux machines, vérifie les ACL, et sur le VPS que le pare-feu autorise le forwarding depuis le réseau Docker vers `tailscale0`. (Le VPS est sous **Fedora** : pare-feu `firewalld`. Si le forwarding est bloqué, mets l'interface Tailscale dans la zone de confiance : `sudo firewall-cmd --permanent --zone=trusted --add-interface=tailscale0 && sudo firewall-cmd --reload` ; le filtrage réel reste assuré par les ACL Tailscale. Essaie d'abord sans : c'est souvent inutile.)
 
 ## 7. Configuration des applications
 
@@ -491,15 +491,16 @@ Sur le HP : `sudo ss -tlnp` doit montrer 2283 et 8222 liés à `127.0.0.1`, jama
 ### 9.1 Compte restreint sur le VPS
 
 ```sh
-sudo adduser --system --group --home /srv/backups/vwbackup --no-create-home --shell /usr/sbin/nologin vwbackup
+sudo useradd --system --user-group --home-dir /srv/backups/vwbackup --no-create-home --shell /usr/sbin/nologin vwbackup   # VPS Fedora : useradd (pas l'adduser de Debian)
 sudo install -d -m 755 -o root -g root /srv/backups/vwbackup           # le chroot DOIT appartenir à root
 sudo install -d -m 700 -o vwbackup -g vwbackup /srv/backups/vwbackup/repo
 sudo install -d -m 755 /etc/ssh/authorized_keys
 sudo cp homelab/vps/sshd-vwbackup.conf /etc/ssh/sshd_config.d/50-vwbackup.conf
-sudo sshd -t && sudo systemctl reload ssh
+sudo restorecon -Rv /etc/ssh /srv/backups                                # SELinux (Fedora) : contextes par défaut
+sudo sshd -t && sudo systemctl reload sshd                               # sur Fedora le service s'appelle sshd
 ```
 
-> Vérifie que `/etc/ssh/sshd_config` contient bien `Include /etc/ssh/sshd_config.d/*.conf` (par défaut sur Debian/Ubuntu).
+> Vérifie que `/etc/ssh/sshd_config` contient bien `Include /etc/ssh/sshd_config.d/*.conf` (par défaut sur Fedora comme sur Debian/Ubuntu).
 
 ### 9.2 Clé SSH dédiée (sur le HP)
 
@@ -593,8 +594,9 @@ Pour restaurer sur un nouveau serveur : recopie `db.sqlite3`, `rsa_key*`, `attac
 
 | Quoi | Fréquence | Comment |
 |---|---|---|
-| OS HP / VPS | auto (Debian) | `unattended-upgrades` |
-| Docker, Tailscale (dépôts tiers) | mensuel | `sudo apt update && sudo apt upgrade` sur le HP et le VPS |
+| OS HP | auto (Debian) | `unattended-upgrades` |
+| OS VPS (Fedora 43) | mensuel, ou auto via `dnf5-automatic` | `sudo dnf upgrade --refresh` ; une nouvelle version de Fedora sort tous les 6 mois (support ~13 mois) : `sudo dnf system-upgrade` au moins une fois par an |
+| Docker, Tailscale sur le HP (dépôts tiers) | mensuel | `sudo apt update && sudo apt upgrade` (sur le VPS, couverts par `dnf upgrade`) |
 | Vaultwarden | dès qu'une release sort (c'est un gestionnaire de mots de passe) | changer `VAULTWARDEN_VERSION` dans `.env` puis `docker compose pull && docker compose up -d vaultwarden`. Releases : <https://github.com/dani-garcia/vaultwarden/releases> |
 | Immich | ~mensuel, **lire les notes de release** | `IMMICH_VERSION=v3` suit la branche majeure ; `docker compose pull && docker compose up -d`. Pour une majeure (v4), resynchroniser `homelab/docker-compose.yml` avec la release officielle. |
 | Test de restauration | tous les 3 mois | §9.6 |
