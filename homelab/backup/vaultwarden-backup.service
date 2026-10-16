@@ -1,0 +1,13 @@
+[Unit]
+Description=Backup chiffré du vault Vaultwarden vers le VPS
+Wants=network-online.target tailscaled.service
+After=network-online.target tailscaled.service docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/vaultwarden-backup.sh
+Nice=10
+IOSchedulingClass=idle
+# Durcissement
+PrivateTmp=true
+NoNewPrivileges=true

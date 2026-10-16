@@ -1,0 +1,11 @@
+[Unit]
+Description=Backup quotidien du vault Vaultwarden
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=10min
+# Rattrape un passage manqué (HP éteint / coupure de courant à 3h30).
+Persistent=true
+
+[Install]
+WantedBy=timers.target

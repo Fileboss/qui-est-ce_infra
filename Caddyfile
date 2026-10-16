@@ -1,3 +1,13 @@
+# En-têtes communs aux services exposés depuis le homelab.
+(security_headers) {
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+        -Server
+    }
+}
+
 qui-est-qui.lepgu.fr {
     # handle_path strips the matched prefix before forwarding, mirroring the
     # frontend's dev proxy.conf.json which rewrites ^/api -> "". The back
@@ -44,4 +54,36 @@ auth.qui-est-qui.lepgu.fr {
 
 s3.qui-est-qui.lepgu.fr {
     reverse_proxy minio:9000
+}
+
+# --- Homelab (HP à la maison, joint via Tailscale ; aucun port ouvert sur la box) ---
+# HOMELAB_TAILNET_IP = IP 100.x.y.z du HP sur le tailnet (cf. docs/homelab-setup.md).
+# Le VPS termine le TLS puis relaie dans le tunnel WireGuard de Tailscale.
+
+photos.lepgu.fr {
+    import security_headers
+    # Pas de limite de taille de requête par défaut dans Caddy : les vidéos
+    # volumineuses envoyées par l'app mobile passent.
+    reverse_proxy {$HOMELAB_TAILNET_IP}:2283 {
+        transport http {
+            dial_timeout 5s
+        }
+    }
+}
+
+vault.lepgu.fr {
+    import security_headers
+
+    # Panneau d'admin Vaultwarden jamais exposé sur Internet (il est de toute
+    # façon désactivé : pas d'ADMIN_TOKEN côté HP).
+    @admin path /admin /admin/*
+    respond @admin "Forbidden" 403
+
+    reverse_proxy {$HOMELAB_TAILNET_IP}:8222 {
+        # Vaultwarden lit l'IP cliente dans X-Real-IP (IP_HEADER) pour son rate-limit.
+        header_up X-Real-IP {remote_host}
+        transport http {
+            dial_timeout 5s
+        }
+    }
 }
