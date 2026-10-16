@@ -404,15 +404,32 @@ ssh -L 2283:localhost:2283 -L 8222:localhost:8222 homelab
 ```
 
 - **Immich** : ouvre <http://localhost:2283>, crée le compte admin (voir §7.1), puis le 2ᵉ utilisateur.
-- **Vaultwarden** : ouvre <http://localhost:8222> (un `localhost` est un contexte sécurisé : le coffre web fonctionne, pas via l'IP tailnet en HTTP). Chaque utilisateur crée son compte avec un mot de passe maître long (§7.2).
+- **Vaultwarden** : le coffre web exige du **HTTPS** (`http://localhost` donne « Insecure URL not allowed »). On l'expose temporairement en HTTPS **sur le tailnet seulement**, avec un certificat `*.ts.net` :
+  1. Console Tailscale → <https://login.tailscale.com/admin/dns> : active **MagicDNS** et **HTTPS Certificates**.
+  2. ACL (<https://login.tailscale.com/admin/acls/file>) : ajoute temporairement `8443` à la règle `autogroup:member` → `tag:homelab:22,2283,8222,8443`.
+  3. Sur le HP (`<tailnet>` = le nom affiché par `tailscale status`, ex. `tailcc4b0a`) :
 
-Puis **referme les inscriptions Vaultwarden** :
+     ```sh
+     sudo tailscale serve --bg --https=8443 http://localhost:8222
+     cd /opt/homelab/infra/homelab
+     sed -i 's|^VW_DOMAIN=.*|VW_DOMAIN=https://homelab.<tailnet>.ts.net:8443|' .env
+     docker compose up -d vaultwarden
+     ```
+
+  4. Ouvre `https://homelab.<tailnet>.ts.net:8443` (Tailscale connecté) : chaque utilisateur crée son compte avec un mot de passe maître long (§7.2). Ne configure pas encore l'extension / les apps (elles pointeront sur `https://vault.lepgu.fr`), et attends le domaine définitif pour une 2FA **passkey/YubiKey** (liée au nom de domaine ; le TOTP, lui, peut se faire tout de suite).
+
+Puis **remets tout en place et referme les inscriptions** :
 
 ```sh
 cd /opt/homelab/infra/homelab
-sed -i 's/^VW_SIGNUPS_ALLOWED=.*/VW_SIGNUPS_ALLOWED=false/' .env
+sed -i 's|^VW_DOMAIN=.*|VW_DOMAIN=https://vault.lepgu.fr|; s/^VW_SIGNUPS_ALLOWED=.*/VW_SIGNUPS_ALLOWED=false/' .env
 docker compose up -d vaultwarden
+sudo tailscale serve --https=8443 off
+tailscale serve status                     # il ne reste que 2283 et 8222
+grep -E 'VW_DOMAIN|SIGNUPS' .env
 ```
+
+Et retire `,8443` des ACL Tailscale.
 
 ## 6. Côté VPS : DNS + Caddy
 
