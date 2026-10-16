@@ -35,7 +35,9 @@ auth.qui-est-qui.lepgu.fr {
 
     @admin_from_home {
         path /admin* /admin/*
-        remote_ip 88.182.11.181
+        # IP publique autorisée pour la console admin, dans le .env du VPS (jamais dans le repo).
+        # Non définie : repli sur 127.0.0.1, donc /admin refusé à tout le monde.
+        remote_ip {$KC_ADMIN_ALLOWED_IP:127.0.0.1}
     }
 
     handle @admin_from_home {
