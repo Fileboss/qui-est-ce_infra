@@ -779,3 +779,121 @@ Annuler : supprimer la ligne puis redémarrer.
 | Turbo off | pics -25 W | tâches lourdes plus lentes |
 | Quick Sync pour Immich | gros gain pendant les transcodages | à tester |
 | Veille du HDD | 1-2 W | réveil de quelques secondes |
+
+## 13. Sécurité : modèle de menace et durcissement
+
+### 13.1 Ce que l'architecture protège bien
+
+- **Maison invisible** : aucun port ouvert sur la box, IP maison publiée nulle part (le HP ne fait que des connexions sortantes vers Tailscale).
+- **Un seul point d'entrée public**, le VPS, en HTTPS Let's Encrypt + HSTS.
+- **Services du HP liés à `127.0.0.1`**, exposés uniquement sur le tailnet par `tailscale serve` (pas de contournement de `ufw` par Docker).
+- **ACL deny-by-default** : le VPS n'atteint le HP que sur 2283/8222, **pas en SSH**. VPS compromis ≠ shell sur le HP.
+- **Vaultwarden chiffré de bout en bout** : base volée (HP ou backup) inutilisable sans le mot de passe maître. Inscriptions fermées, `/admin` désactivé et bloqué par Caddy, conteneur non-root sans capabilities.
+- **Backup du vault chiffré sur le HP** : le VPS ne voit que des blocs chiffrés ; compte SFTP chrooté, clé limitée au tailnet.
+- SSH par clé uniquement, mises à jour automatiques (HP), Secure Boot, BIOS à jour.
+
+### 13.2 Limites connues
+
+| # | Limite | Conséquence | Parade (§13.3) |
+|---|---|---|---|
+| 1 | Le VPS termine le TLS : il voit le trafic en clair | VPS compromis → photos, sessions, mots de passe Immich lisibles ; coffre web Vaultwarden falsifiable (vol du mot de passe maître) | apps natives, VPS à jour, peu de services dessus |
+| 2 | Immich exposé sur Internet, sans anti-bruteforce | une faille Immich est exploitable à distance | mises à jour, mots de passe longs, 2FA… (option : fail2ban, ou Immich tailnet-only) |
+| 3 | Le compte Tailscale contrôle le réseau | compte volé → ACL modifiées, machine ajoutée au tailnet | 2FA, device approval, Tailnet Lock |
+| 4 | Disque du HP non chiffré | vol du HP → photos, base Vaultwarden (métadonnées, pas les secrets), mot de passe restic, clé SSH de backup | mot de passe BIOS, boot USB désactivé ; LUKS si le vol devient un risque réel |
+| 5 | Le HP a le droit d'effacer le dépôt de backup | HP compromis → backups supprimables | dépôt append-only (§9.7) |
+| 6 | Photos en un seul exemplaire | panne disque / ransomware / erreur = perte | disque 2,5" + copie hors site |
+| 7 | Utilisateur dans le groupe `docker` | `docker` = root sans mot de passe : clé SSH volée → root | retirer du groupe, `sudo docker` |
+| 8 | Immich et Vaultwarden sur le même réseau Docker | un conteneur Immich compromis joint Vaultwarden en interne | réseaux séparés |
+| 9 | Aucune détection d'intrusion | une compromission passerait inaperçue | monitoring (Beszel), revue des logs |
+
+### 13.3 Actions de sécurisation
+
+Par ordre de rentabilité. Coche au fur et à mesure.
+
+**1. Comptes et 2FA** (15 min, le plus important)
+
+- [ ] **2FA sur le fournisseur d'identité de Tailscale** (le compte Google / GitHub / Microsoft avec lequel tu te connectes à Tailscale) : c'est la clé maîtresse du réseau.
+- [ ] Tailscale : *Settings → Device management → Device approval* activé (§4.1).
+- [ ] **Tailnet Lock** (<https://login.tailscale.com/admin/settings/tailnet-lock>, doc : <https://tailscale.com/kb/1226/tailnet-lock>) : un nouvel appareil doit être signé par un de tes appareils de confiance (Mac + HP), même si le compte Tailscale ou le serveur de coordination est compromis. Garde précieusement les clés de désactivation générées.
+- [ ] **Vaultwarden** : 2FA pour chaque utilisateur, codes de récupération rangés hors du coffre (§7.2). Passkey/YubiKey uniquement sur `https://vault.lepgu.fr`.
+- [ ] **Immich** : mot de passe long et unique pour chaque compte ; compte admin réservé à l'administration (§7.1).
+- [ ] **OVH** : 2FA sur l'espace client (le DNS est là : qui le contrôle peut rediriger `vault.lepgu.fr`).
+- [ ] **GitHub** : 2FA (le repo est déployé par `git pull` sur les deux machines).
+
+**2. Clients Vaultwarden** (5 min)
+
+- [ ] Utilise l'**extension navigateur et les apps natives** (mobile, bureau) plutôt que le coffre web : leur code est installé localement, un VPS compromis ne peut pas le modifier pour voler le mot de passe maître.
+
+**3. Mises à jour** (récurrent, voir §10)
+
+- [ ] Vaultwarden dès qu'une version sort, Immich ~mensuel (notes de version), VPS Fedora mensuel (ou `dnf5-automatic`), Docker/Tailscale du HP mensuel.
+- [ ] Optionnel, mises à jour auto du VPS :
+
+  ```sh
+  sudo dnf install -y dnf5-plugin-automatic
+  sudo sed -i 's/^apply_updates *=.*/apply_updates = yes/' /etc/dnf/automatic.conf
+  sudo systemctl enable --now dnf5-automatic.timer
+  ```
+
+**4. Retirer ton utilisateur du groupe `docker`** sur le HP (2 min)
+
+Appartenir au groupe `docker` revient à être root sans mot de passe. Sans lui, une clé SSH volée ne suffit plus : il faut aussi ton mot de passe `sudo`.
+
+```sh
+sudo gpasswd -d $USER docker      # puis se déconnecter / reconnecter
+docker ps                         # doit maintenant échouer (permission denied)
+sudo docker compose ps            # à utiliser désormais (dans /opt/homelab/infra/homelab)
+```
+
+**5. Séparer les réseaux Docker** (5 min, coupure de quelques secondes : **pas pendant un import**)
+
+Dans `homelab/docker-compose.yml`, ajoute `networks: [immich]` aux 4 services Immich (`immich-server`, `immich-machine-learning`, `redis`, `database`), `networks: [vaultwarden]` à `vaultwarden`, et en fin de fichier :
+
+```yaml
+networks:
+  immich:
+  vaultwarden:
+```
+
+Puis `sudo docker compose up -d` et vérifie que tout repasse `healthy`. Les ports restent liés à `127.0.0.1`, rien ne change pour `tailscale serve` ni pour Caddy.
+
+**6. Sécurité physique du HP** (5 min, dans le BIOS F10)
+
+- [ ] **Mot de passe administrateur BIOS** (*Security → Setup Password*), noté dans ton gestionnaire.
+- [ ] **Désactiver le démarrage sur USB** et le boot réseau (*Advanced → Boot Options* : décoche *USB Storage Boot* et *Network (PXE) Boot*) : empêche de démarrer un autre système pour lire le disque. Réactive-les temporairement pour une mise à jour du BIOS (§2.5) ou une réinstallation.
+- [ ] Désactiver la carte Wi-Fi/Bluetooth inutilisée (§12.2).
+
+Limite : quelqu'un qui emporte le HP peut sortir le NVMe et le lire ailleurs. Seul un chiffrement LUKS du disque l'empêche (au prix d'une saisie de phrase de passe à chaque démarrage, §2.0).
+
+**7. Sauvegarde des photos** (à planifier)
+
+- [ ] Copie locale nocturne sur un disque dans la baie 2,5" (§2.4).
+- [ ] Copie hors site chiffrée avec restic (Storage Box Hetzner, Backblaze B2… quelques €/To/mois), sur le modèle du §9.
+
+**8. Backup du vault en append-only** (optionnel, §9.7)
+
+- [ ] `rest-server --append-only` sur le VPS, joignable uniquement via le tailnet ; le HP ne peut plus qu'ajouter des snapshots. Le `forget --prune` se fait alors périodiquement depuis le Mac (machine de confiance, avec le mot de passe restic).
+
+**9. Surveillance** (après le déploiement)
+
+- [ ] Monitoring Beszel sur le tailnet uniquement (état des conteneurs, températures, disque, alertes).
+- [ ] Check externe (healthchecks.io ou UptimeRobot) sur `https://photos.lepgu.fr` et `https://vault.lepgu.fr/alive` : alerte si le HP, le tunnel ou le VPS tombe.
+- [ ] De temps en temps : `sudo journalctl -u ssh --since -7d | grep -i 'accepted\|failed'` sur le HP, et les logs Caddy du VPS.
+
+**10. Réduire l'exposition d'Immich** (optionnel, selon ton niveau d'exigence)
+
+- *Option forte* : Immich accessible **uniquement via Tailscale** (retirer le bloc `photos.lepgu.fr` du Caddyfile, Tailscale sur chaque téléphone ; les liens de partage publics ne marchent plus).
+- *Option intermédiaire* : fail2ban ou CrowdSec sur le VPS, alimenté par les logs Caddy, qui bannit les IP qui enchaînent les échecs sur `/api/auth/login`. Attention : avec Docker, le bannissement doit passer par la chaîne `DOCKER-USER`, pas par les règles `firewalld` classiques (le trafic vers un conteneur ne passe pas par `INPUT`).
+
+### 13.4 Vérifications régulières
+
+| Quoi | Commande / lieu | Attendu |
+|---|---|---|
+| Ports de la box | `nmap -Pn <IP box>` depuis la 4G | tout `closed`/`filtered` |
+| Écoute des services HP | `sudo ss -tlnp` sur le HP | 2283 et 8222 sur `127.0.0.1` uniquement |
+| Admin Vaultwarden | `curl -I https://vault.lepgu.fr/admin` | `403` |
+| Inscriptions Vaultwarden | `grep SIGNUPS /opt/homelab/infra/homelab/.env` | `false` |
+| `tailscale serve` | `tailscale serve status` sur le HP | seulement 2283 et 8222 |
+| ACL Tailscale | console → Access controls | identiques à `homelab/tailscale/acl.hujson` |
+| Appareils du tailnet | console → Machines | aucun appareil inconnu |
+| Backup du vault | `journalctl -u vaultwarden-backup.service -n 20` | dernier passage OK |
