@@ -31,10 +31,16 @@ trap cleanup EXIT
 
 hc_ping /start
 rm -rf "$STAGE"
-install -d -m 700 "$STAGE"
 
-sqlite3 "$VW_DATA_DIR/db.sqlite3" ".timeout 30000" ".backup '$STAGE/db.sqlite3'"
-[ "$(sqlite3 "$STAGE/db.sqlite3" 'PRAGMA integrity_check;')" = "ok" ]
+# sqlite3 tourne avec l'uid propriétaire de la base (celui de Vaultwarden) : si le
+# conteneur est arrêté, un sqlite3 root créerait des fichiers -wal/-shm root:root
+# que Vaultwarden (non-root) ne pourrait plus ouvrir au redémarrage.
+VW_OWNER=$(stat -c '%u:%g' "$VW_DATA_DIR/db.sqlite3")
+as_owner() { setpriv --reuid="${VW_OWNER%:*}" --regid="${VW_OWNER#*:}" --clear-groups "$@"; }
+install -d -m 700 -o "${VW_OWNER%:*}" -g "${VW_OWNER#*:}" "$STAGE"
+
+as_owner sqlite3 "$VW_DATA_DIR/db.sqlite3" ".timeout 30000" ".backup '$STAGE/db.sqlite3'"
+[ "$(as_owner sqlite3 "$STAGE/db.sqlite3" 'PRAGMA integrity_check;')" = "ok" ]
 
 # Clés RSA (sinon toutes les sessions sont invalidées à la restauration),
 # config, pièces jointes et Sends.
