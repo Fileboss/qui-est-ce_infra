@@ -416,7 +416,40 @@ docker compose up -d vaultwarden
 
 ## 6. Côté VPS : DNS + Caddy
 
-1. **DNS** (OVH) : enregistrements `A` (et `AAAA` si le VPS a de l'IPv6) `photos` et `vault` pointant vers l'IP publique du VPS. Rien à propos de ta box.
+1. **DNS chez OVH** : `photos.lepgu.fr` et `vault.lepgu.fr` doivent pointer vers l'**IP publique du VPS** (comme `qui-est-qui.lepgu.fr`). Rien à faire sur ta box.
+
+   a. Récupère l'IP du VPS (sur le VPS) :
+
+      ```sh
+      curl -4 -s https://ifconfig.me ; echo      # IPv4, ex. 51.x.y.z
+      curl -6 -s https://ifconfig.me ; echo      # IPv6 si le VPS en a une (sinon erreur : normal)
+      ```
+
+      Ou dans l'espace client OVH : *Bare Metal Cloud → VPS → ton VPS → Accueil → IPv4 / IPv6*. Compare avec l'existant : `dig +short qui-est-qui.lepgu.fr` doit donner la même IPv4.
+
+   b. Espace client OVH (<https://www.ovh.com/manager/>) → **Web Cloud → Noms de domaine → `lepgu.fr` → onglet Zone DNS**.
+
+   c. **Ajouter une entrée** → type **A** :
+      - *Sous-domaine* : `photos` (le champ affiche déjà `.lepgu.fr` à droite : ne tape que `photos`)
+      - *Cible* : l'IPv4 du VPS
+      - *TTL* : par défaut (ou 3600)
+      → Suivant → Valider. Recommence avec le sous-domaine **`vault`**.
+
+   d. Si le VPS a une IPv6 **et** que `qui-est-qui` a déjà une entrée `AAAA` : ajoute aussi deux entrées **AAAA** (`photos`, `vault`) vers l'IPv6. Sinon n'en mets pas : une AAAA vers une IPv6 qui ne répond pas casse l'accès depuis les réseaux IPv6 (beaucoup de mobiles).
+
+   e. Vérifie dans la liste de la zone :
+      - pas d'autre entrée `photos` ou `vault` (CNAME, ancienne A…) ni de redirection OVH sur ces noms : supprime-les ;
+      - s'il existe une entrée **CAA**, elle doit autoriser `letsencrypt.org` (sinon Caddy n'obtiendra pas de certificat).
+
+   f. Attends la propagation (quelques minutes, parfois jusqu'à l'expiration du TTL), puis depuis le Mac :
+
+      ```sh
+      dig +short photos.lepgu.fr @1.1.1.1      # doit afficher l'IP du VPS
+      dig +short vault.lepgu.fr @1.1.1.1
+      ```
+
+      Ne passe à l'étape 3 qu'une fois ces deux réponses correctes : sinon Let's Encrypt échoue (Caddy réessaie tout seul, mais avec un délai croissant).
+
 2. Sur le VPS, dans le repo déjà cloné (`cd ~/qui-est-ce_infra`) : ajoute dans `.env` :
    ```
    HOMELAB_TAILNET_IP=100.x.y.z     # IP du HP notée au §4.3
