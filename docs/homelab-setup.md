@@ -357,6 +357,8 @@ La config est persistante au reboot. Les ACL autorisent seulement le VPS (et tes
 
 ## 5. Déployer la stack sur le HP
 
+> Ce clone est **pour le HP** (qui n'a pas encore le repo). Le VPS a déjà le sien, dans `~/qui-est-ce_infra` : on n'y clone rien, on y fait seulement `git pull` (§6, §9.1).
+
 ```sh
 sudo install -d -o $USER -g $USER /opt/homelab
 git clone <url-de-ce-repo> /opt/homelab/infra          # ou clone via une deploy key en lecture seule si le repo est privé
@@ -415,9 +417,10 @@ docker compose up -d vaultwarden
 ## 6. Côté VPS : DNS + Caddy
 
 1. **DNS** (OVH) : enregistrements `A` (et `AAAA` si le VPS a de l'IPv6) `photos` et `vault` pointant vers l'IP publique du VPS. Rien à propos de ta box.
-2. Sur le VPS, dans le repo infra : ajoute dans `.env` :
+2. Sur le VPS, dans le repo déjà cloné (`cd ~/qui-est-ce_infra`) : ajoute dans `.env` :
    ```
    HOMELAB_TAILNET_IP=100.x.y.z     # IP du HP notée au §4.3
+   KC_ADMIN_ALLOWED_IP=<IP publique de ta box>   # seule IP autorisée sur la console admin Keycloak ; absente = /admin fermé
    ```
 3. Déploie :
    ```sh
@@ -491,6 +494,7 @@ Sur le HP : `sudo ss -tlnp` doit montrer 2283 et 8222 liés à `127.0.0.1`, jama
 ### 9.1 Compte restreint sur le VPS
 
 ```sh
+cd ~/qui-est-ce_infra && git pull                                      # le repo déjà présent sur le VPS
 sudo useradd --system --user-group --home-dir /srv/backups/vwbackup --no-create-home --shell /usr/sbin/nologin vwbackup   # VPS Fedora : useradd (pas l'adduser de Debian)
 sudo install -d -m 755 -o root -g root /srv/backups/vwbackup           # le chroot DOIT appartenir à root
 sudo install -d -m 700 -o vwbackup -g vwbackup /srv/backups/vwbackup/repo
