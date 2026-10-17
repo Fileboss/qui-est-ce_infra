@@ -1,0 +1,30 @@
+# Agent Beszel du VPS (optionnel, docs/homelab-setup.md §14.4).
+# C'est le hub (sur le HP) qui se connecte à l'agent, via le tailnet uniquement :
+# l'agent écoute sur l'IP tailnet du VPS, jamais sur l'IP publique.
+
+name: beszel-agent
+
+services:
+  beszel-agent:
+    container_name: beszel_agent
+    image: henrygd/beszel-agent:${BESZEL_VERSION}
+    restart: always
+    network_mode: host
+    security_opt:
+      - no-new-privileges:true
+      # SELinux (Fedora) : sans ça, l'accès à docker.sock est refusé.
+      - label:disable
+    volumes:
+      - agent-data:/var/lib/beszel-agent
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      LISTEN: ${VPS_TAILNET_IP}:45876
+      KEY: ${BESZEL_KEY}
+      NICS: ${BESZEL_NICS:-}
+    healthcheck:
+      test: ['CMD', '/agent', 'health']
+      interval: 120s
+      start_period: 5s
+
+volumes:
+  agent-data:

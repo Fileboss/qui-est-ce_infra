@@ -554,6 +554,8 @@ sudo restorecon -Rv /etc/ssh /srv/backups                                # SELin
 sudo sshd -t && sudo systemctl reload sshd                               # sur Fedora le service s'appelle sshd
 ```
 
+> Vérifie aussi `stat -c '%A %U:%G' /` : il faut `drwxr-xr-x root:root`. Sur l'image OVH ce n'était pas le cas, et sshd (`StrictModes`) refusait alors la clé de `vwbackup` (§11). Correction : `sudo chown root:root / && sudo chmod 755 /`.
+>
 > Vérifie que `/etc/ssh/sshd_config` contient bien `Include /etc/ssh/sshd_config.d/*.conf` (par défaut sur Fedora comme sur Debian/Ubuntu).
 
 ### 9.2 Clé SSH dédiée (sur le HP)
@@ -586,10 +588,10 @@ Host vps-backup
     IdentitiesOnly yes
 EOF
 sudo chmod 600 /root/.ssh/config
-sudo ssh vps-backup        # accepte l'empreinte du serveur ; doit ouvrir un prompt sftp>, tape `bye`
+sudo sftp vps-backup       # accepte l'empreinte du serveur ; doit ouvrir un prompt sftp>, tape `bye` (avec `ssh` au lieu de `sftp` : « This service allows sftp connections only », c'est normal)
 ```
 
-### 9.3 Initialiser le dépôt restic
+### 9.3 Initialiser le dépôt restic (sur le HP)
 
 ```sh
 sudo install -d -m 700 /root/.config/restic
@@ -620,7 +622,7 @@ systemctl list-timers vaultwarden-backup.timer
 
 ```sh
 sudo systemctl start vaultwarden-backup.service
-journalctl -u vaultwarden-backup.service -n 30 --no-pager
+sudo journalctl -u vaultwarden-backup.service -n 30 --no-pager     # sudo : sinon « No entries »
 sudo bash -c 'set -a; . /etc/vaultwarden-backup.env; restic snapshots'
 ```
 
@@ -653,6 +655,7 @@ Pour restaurer sur un nouveau serveur : recopie `db.sqlite3`, `rsa_key*`, `attac
 | Docker, Tailscale sur le HP (dépôts tiers) | mensuel | `sudo apt update && sudo apt upgrade` (sur le VPS, couverts par `dnf upgrade`) |
 | Vaultwarden | dès qu'une release sort (c'est un gestionnaire de mots de passe) | changer `VAULTWARDEN_VERSION` dans `.env` puis `docker compose pull && docker compose up -d vaultwarden`. Releases : <https://github.com/dani-garcia/vaultwarden/releases> |
 | Immich | ~mensuel, **lire les notes de release** | `IMMICH_VERSION=v3` suit la branche majeure ; `docker compose pull && docker compose up -d`. Pour une majeure (v4), resynchroniser `homelab/docker-compose.yml` avec la release officielle. |
+| Beszel (monitoring) | ~mensuel | `BESZEL_VERSION` dans `homelab/monitoring/.env` (et l'agent du VPS), puis `docker compose pull && docker compose up -d` (§14.5) |
 | Test de restauration | tous les 3 mois | §9.6 |
 | Espace disque | mensuel | `df -h`, `docker system prune -f` |
 | BIOS HP | annuel | page support HP du 800 G4 Mini, BIOS Q21 ; procédure §2.5 |
@@ -662,7 +665,8 @@ Pour restaurer sur un nouveau serveur : recopie `db.sqlite3`, `rsa_key*`, `attac
 - `tailscale status` sur le HP et le VPS : les deux doivent être `active`/`direct` ou `relay`.
 - 502 sur un domaine : le HP est éteint, ou `tailscale serve status` vide (refaire §4.4), ou conteneur down (`docker compose ps`).
 - Vaultwarden en boucle de redémarrage avec `Permission denied` : le dossier de données n'appartient pas au uid du `user:` du compose.
-- Backup en échec : `journalctl -u vaultwarden-backup.service`. Cause fréquente : empreinte SSH non acceptée (refaire `sudo ssh vps-backup`) ou clé absente de `/etc/ssh/authorized_keys/vwbackup`.
+- Backup en échec : `sudo journalctl -u vaultwarden-backup.service`. Cause fréquente : empreinte SSH non acceptée (refaire `sudo sftp vps-backup`) ou clé absente de `/etc/ssh/authorized_keys/vwbackup`.
+- `sudo sftp vps-backup` → `Permission denied (publickey)` alors que la clé et la config sont bonnes : passe sshd du VPS en `LogLevel DEBUG1` et relis `journalctl -u sshd`. Si on y voit `bad ownership or modes for directory /`, la racine du VPS n'est pas en `755 root:root` (vu sur l'image OVH) : `sudo chown root:root / && sudo chmod 755 /`. `StrictModes` vérifie tout le chemin de `/etc/ssh/authorized_keys/vwbackup`, racine comprise.
 - Certificat non émis : DNS pas encore propagé, ou ports 80/443 du VPS fermés.
 
 ## 12. Optimisation de la consommation (optionnel)
@@ -876,7 +880,7 @@ Limite : quelqu'un qui emporte le HP peut sortir le NVMe et le lire ailleurs. Se
 
 **9. Surveillance** (après le déploiement)
 
-- [ ] Monitoring Beszel sur le tailnet uniquement (état des conteneurs, températures, disque, alertes).
+- [ ] Monitoring Beszel sur le tailnet uniquement (état des conteneurs et services, ressources, réseau, alertes) : §14.
 - [ ] Check externe (healthchecks.io ou UptimeRobot) sur `https://photos.lepgu.fr` et `https://vault.lepgu.fr/alive` : alerte si le HP, le tunnel ou le VPS tombe.
 - [ ] De temps en temps : `sudo journalctl -u ssh --since -7d | grep -i 'accepted\|failed'` sur le HP, et les logs Caddy du VPS.
 
@@ -893,7 +897,134 @@ Limite : quelqu'un qui emporte le HP peut sortir le NVMe et le lire ailleurs. Se
 | Écoute des services HP | `sudo ss -tlnp` sur le HP | 2283 et 8222 sur `127.0.0.1` uniquement |
 | Admin Vaultwarden | `curl -I https://vault.lepgu.fr/admin` | `403` |
 | Inscriptions Vaultwarden | `grep SIGNUPS /opt/homelab/infra/homelab/.env` | `false` |
-| `tailscale serve` | `tailscale serve status` sur le HP | seulement 2283 et 8222 |
+| `tailscale serve` | `tailscale serve status` sur le HP | seulement 2283, 8222 (et 8090 si monitoring, §14) |
 | ACL Tailscale | console → Access controls | identiques à `homelab/tailscale/acl.hujson` |
 | Appareils du tailnet | console → Machines | aucun appareil inconnu |
-| Backup du vault | `journalctl -u vaultwarden-backup.service -n 20` | dernier passage OK |
+| Backup du vault | `sudo journalctl -u vaultwarden-backup.service -n 20` | dernier passage OK |
+
+## 14. Monitoring (Beszel)
+
+Objectif : voir l'état des services, la consommation de ressources et le trafic réseau du HP (et du VPS en option), avec des alertes, sans alourdir la machine.
+
+**Pourquoi Beszel** : un hub (interface web, base SQLite) et un agent, tous deux en Go. Il occupe **~30 Mo de RAM au total**, avec un CPU négligeable (une mesure par minute). En comparaison, Netdata prend 150-300 Mo, Prometheus + Grafana plus de 500 Mo, et Uptime Kuma ~100 Mo pour ne faire que des checks de disponibilité.
+
+Ce qu'il affiche (historique de 1 h à 30 jours) :
+
+| Besoin | Où dans Beszel |
+|---|---|
+| État des services | conteneurs Docker (état, santé, CPU/RAM/réseau de chacun) ; services systemd (`vaultwarden-backup`, `tailscaled`, `ssh`...) avec leur état `active`/`failed` |
+| Consommation | CPU, charge, RAM, swap, usage et I/O disque, par machine et par conteneur (pratique pour voir le ML d'Immich) |
+| Trafic réseau | débit par interface : `eno1` (LAN / Internet), `tailscale0` (tunnel, donc l'usage des apps depuis l'extérieur) |
+| Matériel | températures CPU / NVMe, SMART du SSD (usure, erreurs) |
+
+Ce qu'il ne fait pas :
+- **Les watts** : rien ne remplace une prise wattmètre (§12.1).
+- **T'alerter quand le HP est mort** : le hub tourne sur le HP. Le *heartbeat* (§14.3) et le check externe du §13.3 couvrent ce cas.
+
+```
+ Mac / téléphone ──tailnet HTTPS :8090──▶ HP : tailscale serve ─▶ hub 127.0.0.1:8090 ◀─socket Unix─▶ agent (HP)
+                                                                    │
+                                                                    ├─tailnet :45876─▶ agent (VPS, optionnel)
+                                                                    └─HTTPS sortant──▶ healthchecks.io (heartbeat)
+```
+
+Aucun port n'est ouvert sur le LAN. L'interface n'est joignable que depuis tes appareils du tailnet. Les fichiers sont dans `homelab/monitoring/`, une stack séparée de celle des apps.
+
+### 14.1 Déployer sur le HP
+
+```sh
+cd /opt/homelab/infra && git pull
+cd homelab/monitoring
+cp .env.example .env && chmod 600 .env
+sudo install -d -m 700 /opt/homelab/beszel/hub /opt/homelab/beszel/agent /opt/homelab/beszel/socket
+```
+
+Dans `.env`, remplace `<tailnet>` dans `BESZEL_APP_URL` (le nom affiché par `tailscale status`, comme au §5.1). Puis lance **le hub seul** :
+
+```sh
+docker compose up -d beszel
+```
+
+Expose-le sur le tailnet :
+1. **ACL** : recolle `homelab/tailscale/acl.hujson` dans <https://login.tailscale.com/admin/acls/file>. Il autorise `8090` pour tes appareils, et `45876` du HP vers le VPS pour le §14.4.
+2. **MagicDNS + HTTPS Certificates** : déjà activés au §5.1.
+3. Sur le HP :
+
+   ```sh
+   sudo tailscale serve --bg --https=8090 http://localhost:8090
+   tailscale serve status        # 2283, 8222 et 8090
+   ```
+
+### 14.2 Premier lancement
+
+1. Ouvre `https://homelab.<tailnet>.ts.net:8090` et **crée tout de suite le compte admin** : le premier visiteur le devient (seuls tes appareils du tailnet peuvent y accéder).
+2. **Add System** :
+   - *Name* : `homelab`
+   - *Host / IP* : `/beszel_socket/beszel.sock` (l'agent et le hub communiquent par un socket Unix, sans port réseau)
+   - Copie la **clé publique** dans `BESZEL_KEY` (entre guillemets) et le **token** dans `BESZEL_TOKEN`, dans `.env`. Puis valide.
+3. Lance l'agent :
+
+   ```sh
+   docker compose up -d
+   docker compose ps                  # beszel et beszel_agent : healthy
+   docker logs beszel_agent 2>&1 | tail
+   ```
+
+   Le système passe au vert dans la minute.
+
+Si quelque chose manque :
+- **Pas de services systemd, et une erreur AppArmor dans les logs** : ajoute `- apparmor:unconfined` sous `security_opt` de `beszel-agent`, puis `docker compose up -d`.
+- **Pas de SMART** : vérifie le nom du disque avec `ls /dev/nvme*`. La ligne `devices:` du compose suppose `nvme0n1`.
+- **Trafic réseau parasite** (interfaces `veth`, `docker0`) : mets `BESZEL_NICS=eno1,tailscale0` dans `.env`. Le nom de l'interface LAN est donné par `ip -br link`.
+
+### 14.3 Alertes
+
+**Canal de notification** (*Settings → Notifications*). Le plus simple est **ntfy** : une app mobile gratuite, sans compte.
+
+1. Génère un nom de sujet impossible à deviner, car il fait office de mot de passe : `openssl rand -hex 16`.
+2. Dans l'app ntfy, abonne-toi à ce sujet.
+3. Dans Beszel, ajoute l'URL `ntfy://ntfy.sh/<sujet>`.
+
+Autres possibilités : Telegram (`telegram://<token>@telegram?chats=<id>`), ou e-mail par SMTP.
+
+**Seuils conseillés** (icône cloche sur le système, ou *All Systems* pour tous) :
+
+| Alerte | Seuil | Pourquoi |
+|---|---|---|
+| Status | down | agent ou VPS injoignable |
+| CPU | > 90 % pendant 10 min | le ML d'Immich fait des pics normaux, ne pas alerter dessus |
+| Memory | > 85 % pendant 10 min | |
+| Disk | > 80 % | un seul SSD pour tout (photos comprises) |
+| Temperature | > 85 °C pendant 5 min | poussière, ventilateur |
+| Bandwidth | optionnel, ex. > 20 Mo/s pendant 10 min | envoi inhabituel vers l'extérieur |
+
+**Heartbeat** (alerte si le HP ou le hub tombe) :
+1. Sur healthchecks.io, crée un check `homelab-beszel` avec une période de 5 min et une marge (*grace*) de 5 min. Branche-le sur la même notification (ntfy, e-mail...).
+2. Mets son URL de ping dans `BESZEL_HEARTBEAT_URL`, puis `docker compose up -d beszel`.
+
+Le hub envoie un ping par minute (requête `HEAD`, aucune donnée transmise). Si les pings s'arrêtent, healthchecks.io te prévient : HP éteint, coupure de courant ou d'Internet, ou hub planté. Avec le check HTTPS externe sur `photos`/`vault` (§13.3, point 9), tu couvres aussi la panne du tunnel et celle du VPS.
+
+### 14.4 Ajouter le VPS (optionnel)
+
+Le hub (HP) se connecte à l'agent du VPS **par le tailnet**. L'agent écoute sur l'IP tailnet du VPS uniquement, pas sur l'IP publique. Sur le VPS :
+
+```sh
+cd ~/qui-est-ce_infra && git pull
+cd homelab/vps/beszel-agent
+cp .env.example .env && chmod 600 .env
+# VPS_TAILNET_IP : `tailscale ip -4` ; BESZEL_KEY : la même clé publique que pour le HP
+sudo firewall-cmd --get-zone-of-interface=tailscale0      # si "trusted" : pas besoin des deux lignes suivantes
+sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="<HOMELAB_TAILNET_IP>/32" port port="45876" protocol="tcp" accept'
+sudo firewall-cmd --reload
+docker compose up -d
+sudo ss -tlnp | grep 45876                                 # doit écouter sur 100.x.y.z uniquement
+```
+
+L'ACL du §14.1 autorise déjà `tag:homelab → tag:vps:45876`. Dans le hub, fais **Add System** avec *Name* `vps`, *Host* = l'IP tailnet du VPS, *Port* `45876`. Le token est inutile ici, car c'est le hub qui se connecte. Ensuite, active l'alerte **Status** sur ce système.
+
+### 14.5 Entretien et sécurité
+
+- **Mise à jour** : change `BESZEL_VERSION` (même version pour le hub et tous les agents) dans chaque `.env`, puis `docker compose pull && docker compose up -d`. Releases : <https://github.com/henrygd/beszel/releases>.
+- L'agent a accès à `docker.sock`, ce qui équivaut à root sur la machine, comme tout outil de monitoring Docker. Il n'expose aucun port sur le HP (socket Unix) et n'écoute que sur le tailnet sur le VPS.
+- L'interface affiche les logs des conteneurs et des services suivis : garde-la sur le tailnet, **ne l'ajoute jamais au Caddyfile**.
+- La base du hub (`/opt/homelab/beszel/hub`) ne contient que des métriques : pas besoin de la sauvegarder. Si tu la perds, il suffit de recréer le compte et les systèmes.

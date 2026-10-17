@@ -1,0 +1,67 @@
+# Monitoring du HP : Beszel (hub + agent). ~30 Mo de RAM au total, CPU négligeable.
+# Stack séparée de celle des apps : elle reste en place pendant les mises à jour
+# d'Immich / Vaultwarden. Le hub n'écoute que sur 127.0.0.1, exposé sur le tailnet
+# uniquement par `tailscale serve` (voir docs/homelab-setup.md §14).
+
+name: monitoring
+
+services:
+  beszel:
+    container_name: beszel
+    image: henrygd/beszel:${BESZEL_VERSION}
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      APP_URL: ${BESZEL_APP_URL}
+      # Ping sortant vers healthchecks.io : alerte si le HP (ou le hub) ne répond plus,
+      # ce que le hub ne peut pas signaler lui-même. Vide = désactivé.
+      HEARTBEAT_URL: ${BESZEL_HEARTBEAT_URL:-}
+      HEARTBEAT_METHOD: HEAD
+    volumes:
+      - ${BESZEL_DATA_LOCATION}/hub:/beszel_data
+      - ${BESZEL_DATA_LOCATION}/socket:/beszel_socket
+    ports:
+      - '127.0.0.1:8090:8090'
+    healthcheck:
+      test: ['CMD', '/beszel', 'health', '--url', 'http://localhost:8090']
+      interval: 120s
+      start_period: 10s
+      timeout: 5s
+
+  beszel-agent:
+    container_name: beszel_agent
+    # Variante alpine : contient smartctl (usure / santé du SSD).
+    image: henrygd/beszel-agent:${BESZEL_VERSION}-alpine
+    restart: always
+    # Réseau de l'hôte : nécessaire pour voir le trafic réel des interfaces (LAN, tailscale0).
+    # L'agent n'ouvre aucun port : il écoute sur un socket Unix partagé avec le hub.
+    network_mode: host
+    security_opt:
+      - no-new-privileges:true
+    # SMART d'un NVMe : SYS_ADMIN requis. L'accès à docker.sock donne déjà l'équivalent
+    # de root, ce n'est donc pas un recul de sécurité notable.
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/nvme0n1:/dev/nvme0
+    volumes:
+      - ${BESZEL_DATA_LOCATION}/agent:/var/lib/beszel-agent
+      - ${BESZEL_DATA_LOCATION}/socket:/beszel_socket
+      # Stats et état des conteneurs.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # État des services systemd (backup du vault, tailscaled, ssh...).
+      - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket:ro
+    environment:
+      LISTEN: /beszel_socket/beszel.sock
+      HUB_URL: http://localhost:8090
+      TOKEN: ${BESZEL_TOKEN}
+      KEY: ${BESZEL_KEY}
+      # Services systemd suivis (sinon tous ceux qui ont tourné au moins une fois).
+      SERVICE_PATTERNS: vaultwarden-backup*,tailscaled*,docker*,ssh*,unattended-upgrades*,systemd-timesyncd*
+      # Interfaces réseau affichées. Vide = toutes (moins les interfaces Docker virtuelles).
+      NICS: ${BESZEL_NICS:-}
+    healthcheck:
+      test: ['CMD', '/agent', 'health']
+      interval: 120s
+      start_period: 5s

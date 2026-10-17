@@ -41,6 +41,11 @@ TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 cp "$ROOT/homelab/docker-compose.yml" "$TMP/"; cp "$ROOT/homelab/.env.example" "$TMP/.env"
 run docker compose -f "$TMP/docker-compose.yml" --env-file "$TMP/.env" config -q
 
+for stack in monitoring vps/beszel-agent; do
+  step "docker compose config : homelab/$stack"
+  run docker compose -f "$ROOT/homelab/$stack/docker-compose.yml" --env-file "$ROOT/homelab/$stack/.env.example" config -q
+done
+
 step "docker compose config : racine (VPS)"
 run docker compose -f "$ROOT/docker-compose.yml" --env-file "$ROOT/.env.example" config -q
 

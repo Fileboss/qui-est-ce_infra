@@ -1,6 +1,6 @@
 // Policy Tailscale à coller dans https://login.tailscale.com/admin/acls/file
 // Principe : deny-by-default. Le VPS n'atteint le HP que sur les 2 ports des apps,
-// le HP n'atteint le VPS que sur SSH (dépôt SFTP du backup).
+// le HP n'atteint le VPS que sur SSH (dépôt SFTP du backup) et l'agent de monitoring.
 {
 	"tagOwners": {
 		"tag:vps":     ["autogroup:admin"],
@@ -12,10 +12,12 @@
 		{"action": "accept", "src": ["tag:vps"], "dst": ["tag:homelab:2283,8222"]},
 
 		// Backup : HP -> VPS, SSH/SFTP uniquement
-		{"action": "accept", "src": ["tag:homelab"], "dst": ["tag:vps:22"]},
+		// + monitoring : le hub Beszel (HP) interroge l'agent du VPS sur 45876
+		{"action": "accept", "src": ["tag:homelab"], "dst": ["tag:vps:22,45876"]},
 
 		// Tes propres appareils (laptop, téléphone) : admin SSH du HP + accès direct aux apps
-		{"action": "accept", "src": ["autogroup:member"], "dst": ["tag:homelab:22,2283,8222"]},
+		// + interface du monitoring Beszel (8090)
+		{"action": "accept", "src": ["autogroup:member"], "dst": ["tag:homelab:22,2283,8222,8090"]},
 		{"action": "accept", "src": ["autogroup:member"], "dst": ["tag:vps:22"]},
 	],
 }
