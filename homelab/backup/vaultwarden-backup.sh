@@ -43,9 +43,10 @@ as_owner sqlite3 "$VW_DATA_DIR/db.sqlite3" ".timeout 30000" ".backup '$STAGE/db.
 [ "$(as_owner sqlite3 "$STAGE/db.sqlite3" 'PRAGMA integrity_check;')" = "ok" ]
 
 # Clés RSA (sinon toutes les sessions sont invalidées à la restauration),
-# config, pièces jointes et Sends.
+# config, pièces jointes et Sends. config.json n'existe que si /admin a servi.
 shopt -s nullglob
 for f in "$VW_DATA_DIR"/rsa_key* "$VW_DATA_DIR"/config.json; do
+  [ -e "$f" ] || continue
   cp -a "$f" "$STAGE/"
 done
 for d in attachments sends; do

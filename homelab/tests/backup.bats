@@ -64,6 +64,14 @@ teardown() { rm -rf "$T" /var/backups/vaultwarden-stage; }
   grep -qx 'owner=1000' "$STAGE_SEEN"
 }
 
+@test "sans config.json (panneau /admin jamais utilisé), le backup réussit quand même" {
+  rm "$T/data/config.json"
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  grep -qx db.sqlite3 "$STAGE_SEEN"
+  ! grep -qx config.json "$STAGE_SEEN"
+}
+
 @test "le dossier de travail est supprimé après succès" {
   run bash "$SCRIPT"
   [ ! -e /var/backups/vaultwarden-stage ]
