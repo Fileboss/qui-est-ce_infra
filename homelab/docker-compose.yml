@@ -22,6 +22,8 @@ services:
       - redis
       - database
     restart: always
+    # Plafond CPU (miniatures, métadonnées, ffmpeg) : le HP reste réactif pendant les imports.
+    cpus: ${IMMICH_SERVER_CPUS:-3}
     security_opt:
       - no-new-privileges:true
     healthcheck:
@@ -35,6 +37,8 @@ services:
     env_file:
       - .env
     restart: always
+    # Plafond CPU du ML (visages, recherche) : le plus gourmand pendant un import.
+    cpus: ${IMMICH_ML_CPUS:-2}
     security_opt:
       - no-new-privileges:true
     healthcheck:

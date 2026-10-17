@@ -740,7 +740,9 @@ Annuler : supprimer la ligne puis redémarrer.
 
 ### 12.5 Immich
 
-- **Concurrence des tâches** (*Administration → Paramètres → Tâches*) : réduis la concurrence de *Smart Search*, *Face Detection* et *Transcodage vidéo* à 1. L'import initial de la photothèque prend plus de temps, avec des pics plus courts et moins de bruit. Une fois l'import terminé, ces tâches ne tournent que sur les nouvelles photos.
+- **Plafond CPU des conteneurs** : `IMMICH_SERVER_CPUS=3` et `IMMICH_ML_CPUS=2` dans `homelab/.env`, appliqués par `cpus:` dans le compose. Même en plein import, au moins 1 des 6 cœurs reste libre (Vaultwarden, SSH, backup), et la machine chauffe et consomme moins. Les tâches prennent plus de temps, mais rien n'est perdu. Après modification : `docker compose up -d`. Vérifie avec `docker stats --no-stream` : `immich_server` doit plafonner vers 300 % et `immich_machine_learning` vers 200 %. Pour un gros import ponctuel, mets 6 le temps de l'import, puis remets les valeurs.
+- **Concurrence des tâches** (*Administration → Paramètres → Tâches*) : passe à 1 la concurrence de *Génération des miniatures*, *Extraction des métadonnées*, *Smart Search*, *Face Detection* et *Transcodage vidéo*. L'import initial de la photothèque prend plus de temps, avec des pics plus courts et moins de bruit. Une fois l'import terminé, ces tâches ne tournent que sur les nouvelles photos.
+- **Threads de ffmpeg** (*Paramètres → Transcodage vidéo → Threads*) : `0` signifie « tous les cœurs ». Mets `2`.
 - **Transcodage matériel (Quick Sync, iGPU UHD 630)** : bien plus efficace que le CPU pour les vidéos. Ajoute au service `immich-server` de `homelab/docker-compose.yml` :
 
   ```yaml
