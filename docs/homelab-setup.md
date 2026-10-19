@@ -897,7 +897,7 @@ Limite : quelqu'un qui emporte le HP peut sortir le NVMe et le lire ailleurs. Se
 | Quoi | Commande / lieu | Attendu |
 |---|---|---|
 | Ports de la box | `nmap -Pn <IP box>` depuis la 4G | tout `closed`/`filtered` |
-| Écoute des services HP | `sudo ss -tlnp` sur le HP | 2283 et 8222 sur `127.0.0.1` uniquement |
+| Écoute des services HP | `sudo ss -tlnp` sur le HP | 2283, 8222 (+ 8090, 3000) sur `127.0.0.1` uniquement |
 | Admin Vaultwarden | `curl -I https://vault.lepgu.fr/admin` | `403` |
 | Inscriptions Vaultwarden | `grep SIGNUPS /opt/homelab/infra/homelab/.env` | `false` |
 | `tailscale serve` | `tailscale serve status` sur le HP | seulement 2283, 8222 (+ 8090 monitoring §14, 3000 simple-finance §15) |
