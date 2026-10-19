@@ -1,0 +1,12 @@
+[Unit]
+Description=Backup quotidien de simple-finance
+
+[Timer]
+# Après celui du vault (03:30) : ils partagent le dépôt restic.
+OnCalendar=*-*-* 04:00:00
+RandomizedDelaySec=10min
+# Rattrape un passage manqué (HP éteint / coupure de courant).
+Persistent=true
+
+[Install]
+WantedBy=timers.target

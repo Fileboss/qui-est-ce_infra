@@ -32,8 +32,8 @@ echo "OK"
 step "Scripts, unités systemd, sshd, ACL (dans Linux)"
 SHOW=1 run docker run --rm -v "$ROOT:/repo:ro" "$IMAGE" bash /repo/homelab/tests/static.sh
 
-step "Tests du script de backup (bats)"
-run docker run --rm -v "$ROOT:/repo:ro" "$IMAGE" bats --print-output-on-failure /repo/homelab/tests/backup.bats
+step "Tests des scripts de backup (bats)"
+run docker run --rm -v "$ROOT:/repo:ro" "$IMAGE" bats --print-output-on-failure /repo/homelab/tests/
 
 step "docker compose config : homelab/"
 # Le compose lit .env (env_file) : on valide sur une copie temporaire de .env.example.
@@ -41,7 +41,7 @@ TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 cp "$ROOT/homelab/docker-compose.yml" "$TMP/"; cp "$ROOT/homelab/.env.example" "$TMP/.env"
 run docker compose -f "$TMP/docker-compose.yml" --env-file "$TMP/.env" config -q
 
-for stack in monitoring vps/beszel-agent; do
+for stack in monitoring simple-finance vps/beszel-agent; do
   step "docker compose config : homelab/$stack"
   run docker compose -f "$ROOT/homelab/$stack/docker-compose.yml" --env-file "$ROOT/homelab/$stack/.env.example" config -q
 done

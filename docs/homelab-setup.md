@@ -656,6 +656,7 @@ Pour restaurer sur un nouveau serveur : recopie `db.sqlite3`, `rsa_key*`, `attac
 | Vaultwarden | dès qu'une release sort (c'est un gestionnaire de mots de passe) | changer `VAULTWARDEN_VERSION` dans `.env` puis `docker compose pull && docker compose up -d vaultwarden`. Releases : <https://github.com/dani-garcia/vaultwarden/releases> |
 | Immich | ~mensuel, **lire les notes de release** | `IMMICH_VERSION=v3` suit la branche majeure ; `docker compose pull && docker compose up -d`. Pour une majeure (v4), resynchroniser `homelab/docker-compose.yml` avec la release officielle. |
 | Beszel (monitoring) | ~mensuel | `BESZEL_VERSION` dans `homelab/monitoring/.env` (et l'agent du VPS), puis `docker compose pull && docker compose up -d` (§14.5) |
+| simple-finance | à chaque release | `FINANCE_VERSION` dans `homelab/simple-finance/.env`, puis `docker compose pull && docker compose up -d` (§15.4) |
 | Test de restauration | tous les 3 mois | §9.6 |
 | Espace disque | mensuel | `df -h`, `docker system prune -f` |
 | BIOS HP | annuel | page support HP du 800 G4 Mini, BIOS Q21 ; procédure §2.5 |
@@ -899,10 +900,11 @@ Limite : quelqu'un qui emporte le HP peut sortir le NVMe et le lire ailleurs. Se
 | Écoute des services HP | `sudo ss -tlnp` sur le HP | 2283 et 8222 sur `127.0.0.1` uniquement |
 | Admin Vaultwarden | `curl -I https://vault.lepgu.fr/admin` | `403` |
 | Inscriptions Vaultwarden | `grep SIGNUPS /opt/homelab/infra/homelab/.env` | `false` |
-| `tailscale serve` | `tailscale serve status` sur le HP | seulement 2283, 8222 (et 8090 si monitoring, §14) |
+| `tailscale serve` | `tailscale serve status` sur le HP | seulement 2283, 8222 (+ 8090 monitoring §14, 3000 simple-finance §15) |
 | ACL Tailscale | console → Access controls | identiques à `homelab/tailscale/acl.hujson` |
 | Appareils du tailnet | console → Machines | aucun appareil inconnu |
 | Backup du vault | `sudo journalctl -u vaultwarden-backup.service -n 20` | dernier passage OK |
+| Backup de simple-finance | `sudo journalctl -u finance-backup.service -n 20` | dernier passage OK |
 
 ## 14. Monitoring (Beszel)
 
@@ -1030,3 +1032,81 @@ L'ACL du §14.1 autorise déjà `tag:homelab → tag:vps:45876`. Dans le hub, fa
 - L'agent a accès à `docker.sock`, ce qui équivaut à root sur la machine, comme tout outil de monitoring Docker. Il n'expose aucun port sur le HP (socket Unix) et n'écoute que sur le tailnet sur le VPS.
 - L'interface affiche les logs des conteneurs et des services suivis : garde-la sur le tailnet, **ne l'ajoute jamais au Caddyfile**.
 - La base du hub (`/opt/homelab/beszel/hub`) ne contient que des métriques : pas besoin de la sauvegarder. Si tu la perds, il suffit de recréer le compte et les systèmes.
+
+## 15. simple-finance (suivi des comptes)
+
+Valorisation mensuelle de chaque compte (Livret A, PEA, assurance vie…), variation vs le mois précédent et depuis janvier, en séparant les gains des versements. L'app remplace le Google Sheet. Code et image : <https://github.com/Fileboss/simple-finance>. Comme Beszel, c'est une stack séparée (`homelab/simple-finance/`), joignable **sur le tailnet uniquement**.
+
+- **Ressources** : un conteneur Bun, ~15 Mo de RAM au repos (plafond 256 Mo), CPU nul hors des quelques clics mensuels. Système de fichiers en lecture seule, sauf la base.
+- **Données** : une base SQLite, `/opt/homelab/simple-finance/data/finance.sqlite`, de quelques centaines de Ko.
+- **Pas de login** : l'accès est limité à tes appareils par l'ACL Tailscale. L'app refuse aussi les formulaires envoyés depuis un autre site.
+- **Sauvegarde** : chaque nuit à 04:00, `finance-backup.sh` fait une copie cohérente de la base (`sqlite3 .backup`) puis l'envoie chiffrée sur le VPS, dans le même dépôt restic que le vault.
+
+### 15.1 Déployer
+
+```sh
+cd /opt/homelab/infra && git pull
+cd homelab/simple-finance
+cp .env.example .env && chmod 600 .env       # FINANCE_VERSION : dernière release
+sudo install -d -o 1000 -g 1000 /opt/homelab/simple-finance/data
+docker compose pull
+docker compose up -d
+docker compose ps                            # simple-finance : healthy
+```
+
+Expose-le sur le tailnet :
+1. **ACL** : recolle `homelab/tailscale/acl.hujson` dans la console Tailscale. Il autorise le port `3000` pour tes appareils.
+2. Sur le HP :
+
+   ```sh
+   sudo tailscale serve --bg --https=3000 http://localhost:3000
+   tailscale serve status                    # 2283, 8222, 3000 (et 8090)
+   ```
+
+3. Ouvre `https://homelab.<tailnet>.ts.net:3000`.
+
+### 15.2 Reprendre l'historique du Sheet
+
+1. Dans Google Sheets : *Fichier → Télécharger → Valeurs séparées par des virgules (.csv)*.
+2. Dans l'app : *Import*, choisis le fichier, puis *Prévisualiser*. Le contrôle doit annoncer que tous les totaux et variations retombent exactement sur ceux du Sheet.
+3. Pour chaque compte, saisis la **performance totale affichée par son appli** (ou directement le capital investi, par exemple pour le Livret A), puis *Importer*. L'app en déduit le capital investi de départ.
+
+Les versements des mois importés ne sont pas connus : pour ces mois, l'app n'affiche que les variations brutes. Le gain hors versements se calcule à partir du premier mois saisi dans l'app.
+
+Chaque début de mois : *Saisie*, la valeur de chaque compte et les versements nets du mois (dépôts − retraits).
+
+### 15.3 Sauvegarde chaque nuit
+
+Le script réutilise le dépôt restic et la clé SSH du backup du vault (§9). Rien à créer sur le VPS.
+
+```sh
+cd /opt/homelab/infra/homelab/backup
+sudo install -m 750 finance-backup.sh /usr/local/sbin/finance-backup.sh
+sudo install -m 644 finance-backup.service finance-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now finance-backup.timer
+sudo systemctl start finance-backup.service             # premier passage tout de suite
+sudo journalctl -u finance-backup.service -n 30 --no-pager
+sudo bash -c 'set -a; . /etc/vaultwarden-backup.env; restic snapshots --host simple-finance'
+```
+
+La base est créée au premier démarrage du conteneur : déploie l'app (§15.1) avant d'activer le timer, sinon le script échoue (volontairement).
+
+Optionnel : un check healthchecks.io (période 1 jour, marge 3 h) dont l'URL va dans `FINANCE_HC_PING_URL`, dans `/etc/vaultwarden-backup.env`.
+
+**Restaurer** :
+
+```sh
+sudo bash -c 'set -a; . /etc/vaultwarden-backup.env; restic restore latest --host simple-finance --target /tmp/sf'
+cd /opt/homelab/infra/homelab/simple-finance && docker compose stop
+sudo rm -f /opt/homelab/simple-finance/data/finance.sqlite-{wal,shm}
+sudo install -o 1000 -g 1000 -m 644 /tmp/sf/var/backups/finance-stage/finance.sqlite /opt/homelab/simple-finance/data/finance.sqlite
+docker compose start
+sudo rm -rf /tmp/sf
+```
+
+### 15.4 Entretien et sécurité
+
+- **Mise à jour** : `FINANCE_VERSION` dans `.env` (version sans le `v`, ex. `0.2.0`), puis `docker compose pull && docker compose up -d`. L'app migre sa base au démarrage : le backup de la nuit précédente suffit comme point de retour.
+- Ces chiffres sont personnels : **ne publie jamais l'app via Caddy**, elle n'a pas de login. La base est en clair sur le SSD du HP ; la sauvegarde sur le VPS est chiffrée.
+- Le disque externe de 3 mois, s'il est mis en place, doit aussi contenir `/opt/homelab/simple-finance`.

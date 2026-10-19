@@ -7,12 +7,14 @@ check() { local name=$1; shift; if out=$("$@" 2>&1); then echo "  ok   $name"; e
 
 check "bash -n vaultwarden-backup.sh" bash -n backup/vaultwarden-backup.sh
 check "shellcheck vaultwarden-backup.sh" shellcheck backup/vaultwarden-backup.sh
+check "bash -n finance-backup.sh" bash -n backup/finance-backup.sh
+check "shellcheck finance-backup.sh" shellcheck backup/finance-backup.sh
 
 # systemd : l'ExecStart doit exister pour que verify ne se plaigne pas.
-install -m 755 backup/vaultwarden-backup.sh /usr/local/sbin/vaultwarden-backup.sh
-cp backup/vaultwarden-backup.service backup/vaultwarden-backup.timer /etc/systemd/system/
-check "systemd-analyze verify (service + timer)" \
-  systemd-analyze verify /etc/systemd/system/vaultwarden-backup.service /etc/systemd/system/vaultwarden-backup.timer
+install -m 755 backup/*.sh /usr/local/sbin/
+cp backup/*.service backup/*.timer /etc/systemd/system/
+check "systemd-analyze verify (services + timers)" \
+  systemd-analyze verify /etc/systemd/system/vaultwarden-backup.{service,timer} /etc/systemd/system/finance-backup.{service,timer}
 
 # sshd : la conf du compte de backup, testée avec un utilisateur vwbackup.
 ssh-keygen -A >/dev/null 2>&1

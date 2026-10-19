@@ -1,0 +1,28 @@
+# simple-finance : suivi mensuel de la valorisation des comptes (https://github.com/Fileboss/simple-finance).
+# Stack séparée, accessible sur le tailnet uniquement (127.0.0.1 + `tailscale serve`,
+# voir docs/homelab-setup.md §15). Un seul conteneur Bun, base SQLite dans un fichier.
+# Sauvegarde : homelab/backup/finance-backup.sh (sqlite3 .backup + restic vers le VPS).
+
+name: finance
+
+services:
+  simple-finance:
+    container_name: simple-finance
+    image: ghcr.io/fileboss/simple-finance:${FINANCE_VERSION}
+    restart: always
+    # uid de l'utilisateur du HP, propriétaire du dossier de données.
+    user: "1000:1000"
+    security_opt:
+      - no-new-privileges:true
+    # Système de fichiers en lecture seule : seule la base (/data) est modifiable.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cpus: ${FINANCE_CPUS:-1}
+    mem_limit: 256m
+    ports:
+      - '127.0.0.1:3000:3000'
+    volumes:
+      - ${FINANCE_DATA_LOCATION}/data:/data
+    environment:
+      TZ: Europe/Paris
