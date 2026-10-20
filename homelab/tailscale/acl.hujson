@@ -1,5 +1,5 @@
 // Policy Tailscale à coller dans https://login.tailscale.com/admin/acls/file
-// Principe : deny-by-default. Le VPS n'atteint le HP que sur les 2 ports des apps,
+// Principe : deny-by-default. Le VPS n'atteint le HP que sur les 3 ports des apps publiques,
 // le HP n'atteint le VPS que sur SSH (dépôt SFTP du backup) et l'agent de monitoring.
 {
 	"tagOwners": {
@@ -8,16 +8,16 @@
 	},
 
 	"acls": [
-		// Caddy (VPS) -> Immich (2283) et Vaultwarden (8222)
-		{"action": "accept", "src": ["tag:vps"], "dst": ["tag:homelab:2283,8222"]},
+		// Caddy (VPS) -> Immich (2283), Vaultwarden (8222) et Memos (5230)
+		{"action": "accept", "src": ["tag:vps"], "dst": ["tag:homelab:2283,5230,8222"]},
 
 		// Backup : HP -> VPS, SSH/SFTP uniquement
 		// + monitoring : le hub Beszel (HP) interroge l'agent du VPS sur 45876
 		{"action": "accept", "src": ["tag:homelab"], "dst": ["tag:vps:22,45876"]},
 
 		// Tes propres appareils (laptop, téléphone) : admin SSH du HP + accès direct aux apps
-		// + interface du monitoring Beszel (8090) et simple-finance (3000)
-		{"action": "accept", "src": ["autogroup:member"], "dst": ["tag:homelab:22,2283,3000,8222,8090"]},
+		// + interface du monitoring Beszel (8090), simple-finance (3000) et Memos (5230)
+		{"action": "accept", "src": ["autogroup:member"], "dst": ["tag:homelab:22,2283,3000,5230,8222,8090"]},
 		{"action": "accept", "src": ["autogroup:member"], "dst": ["tag:vps:22"]},
 	],
 }

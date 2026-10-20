@@ -657,6 +657,7 @@ Pour restaurer sur un nouveau serveur : recopie `db.sqlite3`, `rsa_key*`, `attac
 | Immich | ~mensuel, **lire les notes de release** | `IMMICH_VERSION=v3` suit la branche majeure ; `docker compose pull && docker compose up -d`. Pour une majeure (v4), resynchroniser `homelab/docker-compose.yml` avec la release officielle. |
 | Beszel (monitoring) | ~mensuel | `BESZEL_VERSION` dans `homelab/monitoring/.env` (et l'agent du VPS), puis `docker compose pull && docker compose up -d` (§14.5) |
 | simple-finance | à chaque release | `FINANCE_VERSION` dans `homelab/simple-finance/.env`, puis `docker compose pull && docker compose up -d` (§15.4) |
+| Memos | quand MoeMemos supporte la nouvelle version | `MEMOS_VERSION` dans `homelab/memos/.env`, backup juste avant, puis `docker compose pull && docker compose up -d` (§16.6) |
 | Test de restauration | tous les 3 mois | §9.6 |
 | Espace disque | mensuel | `df -h`, `docker system prune -f` |
 | BIOS HP | annuel | page support HP du 800 G4 Mini, BIOS Q21 ; procédure §2.5 |
@@ -824,6 +825,7 @@ Par ordre de rentabilité. Coche au fur et à mesure.
 - [ ] **Tailnet Lock** (<https://login.tailscale.com/admin/settings/tailnet-lock>, doc : <https://tailscale.com/kb/1226/tailnet-lock>) : un nouvel appareil doit être signé par un de tes appareils de confiance (Mac + HP), même si le compte Tailscale ou le serveur de coordination est compromis. Garde précieusement les clés de désactivation générées.
 - [ ] **Vaultwarden** : 2FA pour chaque utilisateur, codes de récupération rangés hors du coffre (§7.2). Passkey/YubiKey uniquement sur `https://vault.lepgu.fr`.
 - [ ] **Immich** : mot de passe long et unique pour chaque compte ; compte admin réservé à l'administration (§7.1).
+- [ ] **Memos** : mot de passe long et unique pour chaque compte, inscriptions fermées (§16.2).
 - [ ] **OVH** : 2FA sur l'espace client (le DNS est là : qui le contrôle peut rediriger `vault.lepgu.fr`).
 - [ ] **GitHub** : 2FA (le repo est déployé par `git pull` sur les deux machines).
 
@@ -897,14 +899,16 @@ Limite : quelqu'un qui emporte le HP peut sortir le NVMe et le lire ailleurs. Se
 | Quoi | Commande / lieu | Attendu |
 |---|---|---|
 | Ports de la box | `nmap -Pn <IP box>` depuis la 4G | tout `closed`/`filtered` |
-| Écoute des services HP | `sudo ss -tlnp` sur le HP | 2283, 8222 (+ 8090, 3000) sur `127.0.0.1` uniquement |
+| Écoute des services HP | `sudo ss -tlnp` sur le HP | 2283, 8222, 5230 (+ 8090, 3000) sur `127.0.0.1` uniquement |
 | Admin Vaultwarden | `curl -I https://vault.lepgu.fr/admin` | `403` |
 | Inscriptions Vaultwarden | `grep SIGNUPS /opt/homelab/infra/homelab/.env` | `false` |
-| `tailscale serve` | `tailscale serve status` sur le HP | seulement 2283, 8222 (+ 8090 monitoring §14, 3000 simple-finance §15) |
+| `tailscale serve` | `tailscale serve status` sur le HP | seulement 2283, 8222, 5230 Memos §16 (+ 8090 monitoring §14, 3000 simple-finance §15) |
 | ACL Tailscale | console → Access controls | identiques à `homelab/tailscale/acl.hujson` |
 | Appareils du tailnet | console → Machines | aucun appareil inconnu |
 | Backup du vault | `sudo journalctl -u vaultwarden-backup.service -n 20` | dernier passage OK |
 | Backup de simple-finance | `sudo journalctl -u finance-backup.service -n 20` | dernier passage OK |
+| Backup de Memos | `sudo journalctl -u memos-backup.service -n 20` | dernier passage OK |
+| Inscriptions Memos | `https://notes.lepgu.fr/auth/signup` en navigation privée | création de compte refusée |
 
 ## 14. Monitoring (Beszel)
 
@@ -1110,3 +1114,121 @@ sudo rm -rf /tmp/sf
 - **Mise à jour** : `FINANCE_VERSION` dans `.env` (version sans le `v`, ex. `0.2.0`), puis `docker compose pull && docker compose up -d`. L'app migre sa base au démarrage : le backup de la nuit précédente suffit comme point de retour.
 - Ces chiffres sont personnels : **ne publie jamais l'app via Caddy**, elle n'a pas de login. La base est en clair sur le SSD du HP ; la sauvegarde sur le VPS est chiffrée.
 - Le disque externe de 3 mois, s'il est mis en place, doit aussi contenir `/opt/homelab/simple-finance`.
+
+## 16. Memos (notes rapides, remplace Google Keep)
+
+Notes et listes à cocher, surtout depuis le téléphone. Serveur : [Memos](https://github.com/usememos/memos) ; appli : [MoeMemos](https://github.com/mudkipme/MoeMemos) (iOS et Android, hors ligne avec synchro). Stack séparée (`homelab/memos/`), publiée sur **`https://notes.lepgu.fr`** par le Caddy du VPS, comme Immich et Vaultwarden : l'appli marche partout, sans Tailscale sur le téléphone.
+
+- **Ressources** : un binaire Go, ~30-50 Mo de RAM au repos (plafond 512 Mo). Système de fichiers en lecture seule, sauf le dossier de données.
+- **Données** : `/opt/homelab/memos/data/` : `memos_prod.db` (SQLite) et `assets/` (pièces jointes).
+- **Sauvegarde** : chaque nuit à 04:30, `memos-backup.sh` copie la base (`sqlite3 .backup`) et les pièces jointes, puis les envoie chiffrées sur le VPS, dans le même dépôt restic que le vault.
+- **Versions** : l'API de Memos change souvent et MoeMemos suit avec du retard. La version est épinglée (`MEMOS_VERSION`) : ne monte qu'une fois la nouvelle version annoncée dans les [notes de release de MoeMemos](https://github.com/mudkipme/MoeMemos/releases). MoeMemos 2.0.7 supporte Memos 0.31.0.
+
+### 16.1 Déployer (sur le HP)
+
+```sh
+cd /opt/homelab/infra && git pull
+cd homelab/memos
+cp .env.example .env && chmod 600 .env
+sudo install -d -o 1000 -g 1000 /opt/homelab/memos/data
+docker compose pull
+docker compose up -d
+docker compose ps                            # memos : healthy
+curl -s http://127.0.0.1:5230/healthz ; echo
+```
+
+Expose-le sur le tailnet (en TCP brut, comme Vaultwarden : c'est Caddy qui fait le TLS) :
+1. **ACL** : recolle `homelab/tailscale/acl.hujson` dans la console Tailscale. Il ouvre `5230` au VPS et à tes appareils.
+2. Sur le HP :
+
+   ```sh
+   sudo tailscale serve --bg --tcp 5230 tcp://localhost:5230
+   tailscale serve status                    # 2283, 8222, 5230 (+ 3000, 8090)
+   ```
+
+### 16.2 Créer les comptes AVANT d'exposer au public
+
+Comme pour Immich, **le premier compte inscrit devient administrateur**, et les inscriptions sont ouvertes par défaut. Depuis le Mac, tunnel SSH :
+
+```sh
+ssh -L 5230:localhost:5230 homelab
+```
+
+1. Ouvre <http://localhost:5230> et crée **ton** compte (mot de passe long, dans Vaultwarden) : c'est l'administrateur.
+2. *Paramètres → Système* :
+   - active **Interdire l'inscription des utilisateurs** ;
+   - désactive **Autoriser l'accès public** : un visiteur non connecté ne voit plus rien sur `notes.lepgu.fr`. Les liens de partage d'une note précise continuent de marcher.
+3. *Paramètres → Membre* : crée le 2ᵉ compte. Choisis son rôle en pensant au §16.4.
+
+### 16.3 Publier sur notes.lepgu.fr (VPS)
+
+1. **DNS OVH** : entrée **A** `notes` vers l'IPv4 du VPS (et AAAA seulement si `photos`/`vault` en ont une), comme au §6 (étape 1). Vérifie : `dig +short notes.lepgu.fr @1.1.1.1`.
+2. Sur le VPS :
+
+   ```sh
+   cd ~/qui-est-ce_infra && git pull
+   docker compose up -d caddy                # recharge le Caddyfile (bloc notes.lepgu.fr)
+   docker compose logs -f caddy              # certificat Let's Encrypt obtenu
+   docker compose exec caddy sh -c 'wget -qO- http://$HOMELAB_TAILNET_IP:5230/healthz'
+   curl -I https://notes.lepgu.fr
+   ```
+
+3. **MoeMemos** sur chaque téléphone : adresse du serveur `https://notes.lepgu.fr`, puis identifiant et mot de passe du compte.
+
+### 16.4 Utilisation à deux
+
+Contrairement à Keep, Memos ne permet pas de partager une note avec une personne précise. Chaque note a une **visibilité** :
+
+| Visibilité | Qui la voit |
+|---|---|
+| **Privé** | toi seul |
+| **Protégé** | tous les comptes connectés, donc vous deux |
+| **Espace** | les membres d'un *Espace* (*Paramètres → Espaces*, sur invitation) |
+| **Public** | tous les comptes ; aussi les visiteurs anonymes si l'accès public est activé (désactivé au §16.2) |
+
+- Règle la **visibilité par défaut** dans *Paramètres → Préférences* (Privé ou Protégé).
+- **Seuls l'auteur d'une note et les administrateurs peuvent la modifier, y compris pour cocher une case.** L'autre compte peut lire une note Protégée, la commenter et y réagir, mais ne peut pas la modifier. Les Espaces n'y changent rien : ils restreignent qui lit, pas qui modifie.
+- Pour une **liste de courses commune** que vous cochez tous les deux : donnez le rôle **Admin** au 2ᵉ compte (*Paramètres → Membre*). L'admin d'instance peut modifier toutes les notes qu'il peut lire. Contrepartie : il peut aussi changer les réglages et gérer les comptes. À deux, c'est le plus simple. Une note Privée reste invisible pour l'autre, même admin, dans les listes.
+- Les Espaces ne servent que si un jour il y a plus de comptes (famille…) et qu'une note ne doit pas être vue de tous. Vérifie alors qu'ils s'affichent dans MoeMemos : rien ne l'indique dans ses notes de version 2.0.7.
+- **Lien de partage** (menu d'une note → *Partager*) : pour quelqu'un sans compte, avec expiration (1, 7 ou 30 jours) et révocable.
+- Organisation : des tags (`#courses`, `#maison`) remplacent les libellés de Keep ; épingle les listes en cours.
+- **Import depuis Keep** : il n'y a pas d'import natif. Google Takeout donne un JSON par note ; à recopier à la main pour les quelques notes à garder (ou à scripter via l'API de Memos si elles sont nombreuses).
+
+### 16.5 Sauvegarde chaque nuit
+
+Le script réutilise le dépôt restic et la clé SSH du backup du vault (§9). Rien à créer sur le VPS.
+
+```sh
+cd /opt/homelab/infra/homelab/backup
+sudo install -m 750 memos-backup.sh /usr/local/sbin/memos-backup.sh
+sudo install -m 644 memos-backup.service memos-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now memos-backup.timer
+sudo systemctl start memos-backup.service              # premier passage tout de suite
+sudo journalctl -u memos-backup.service -n 30 --no-pager
+sudo bash -c 'set -a; . /etc/vaultwarden-backup.env; restic snapshots --host memos'
+```
+
+La base est créée au premier démarrage du conteneur : déploie l'app (§16.1) avant d'activer le timer, sinon le script échoue (volontairement).
+
+Optionnel : un check healthchecks.io (période 1 jour, marge 3 h) dont l'URL va dans `MEMOS_HC_PING_URL`, dans `/etc/vaultwarden-backup.env`.
+
+**Restaurer** :
+
+```sh
+sudo bash -c 'set -a; . /etc/vaultwarden-backup.env; restic restore latest --host memos --target /tmp/memos'
+cd /opt/homelab/infra/homelab/memos && docker compose stop
+sudo rm -f /opt/homelab/memos/data/memos_prod.db-{wal,shm}
+sudo install -o 1000 -g 1000 -m 644 /tmp/memos/var/backups/memos-stage/memos_prod.db /opt/homelab/memos/data/memos_prod.db
+[ -d /tmp/memos/var/backups/memos-stage/assets ] && sudo rsync -a --delete /tmp/memos/var/backups/memos-stage/assets/ /opt/homelab/memos/data/assets/
+docker compose start
+sudo rm -rf /tmp/memos
+```
+
+### 16.6 Entretien et sécurité
+
+- **Mise à jour** : vérifie d'abord que MoeMemos supporte la nouvelle version, puis `MEMOS_VERSION` dans `.env` (sans le `v`, ex. `0.31.0`), puis `docker compose pull && docker compose up -d`. Memos migre sa base au démarrage, **sans retour arrière** : lance `sudo systemctl start memos-backup.service` juste avant.
+- `notes.lepgu.fr` est public : mots de passe longs et uniques. Le rate-limit de Memos voit l'IP réelle des clients (Caddy la transmet ; `tailscale serve` relaie depuis `127.0.0.1`, que Memos considère comme proxy de confiance).
+- Vérifie de temps en temps que l'inscription est toujours fermée : en navigation privée, `https://notes.lepgu.fr/auth/signup` doit afficher « Les inscriptions sont fermées ». Avec l'accès public désactivé, `/explore` ne doit rien montrer sans connexion.
+- Les notes sont en clair dans la base sur le SSD du HP (pas de chiffrement de bout en bout comme Vaultwarden) : n'y mets pas de mots de passe. La sauvegarde sur le VPS est chiffrée.
+- Le disque externe de 3 mois, s'il est mis en place, doit aussi contenir `/opt/homelab/memos`.

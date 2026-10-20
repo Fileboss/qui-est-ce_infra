@@ -73,6 +73,15 @@ photos.lepgu.fr {
     }
 }
 
+notes.lepgu.fr {
+    import security_headers
+    reverse_proxy {$HOMELAB_TAILNET_IP}:5230 {
+        transport http {
+            dial_timeout 5s
+        }
+    }
+}
+
 vault.lepgu.fr {
     import security_headers
 

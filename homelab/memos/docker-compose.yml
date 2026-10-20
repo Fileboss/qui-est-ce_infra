@@ -1,0 +1,46 @@
+# Memos : notes rapides (remplace Google Keep), https://github.com/usememos/memos.
+# Appli mobile : MoeMemos (iOS/Android), https://github.com/mudkipme/MoeMemos.
+# Stack séparée. Le conteneur n'écoute que sur 127.0.0.1 ; `tailscale serve` l'expose
+# sur le tailnet et Caddy (VPS) le publie sur notes.lepgu.fr (voir docs/homelab-setup.md §16).
+# Un seul binaire Go, base SQLite + pièces jointes dans un dossier.
+# Sauvegarde : homelab/backup/memos-backup.sh (sqlite3 .backup + restic vers le VPS).
+
+name: memos
+
+services:
+  memos:
+    container_name: memos
+    # Épingler une version supportée par MoeMemos (l'API de Memos casse souvent
+    # entre deux versions) : voir les notes de release de MoeMemos avant de monter.
+    image: neosmemo/memos:${MEMOS_VERSION}
+    restart: always
+    # uid de l'utilisateur du HP, propriétaire du dossier de données. Démarré non-root,
+    # l'entrypoint de l'image ne fait ni chown ni su-exec.
+    user: "1000:1000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # Système de fichiers en lecture seule : seules les données (/var/opt/memos) sont modifiables.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cpus: ${MEMOS_CPUS:-1}
+    mem_limit: 512m
+    ports:
+      - '127.0.0.1:5230:5230'
+    volumes:
+      - ${MEMOS_DATA_LOCATION}/data:/var/opt/memos
+    environment:
+      TZ: Europe/Paris
+      MEMOS_PORT: 5230
+      # URL publique : liens de partage, flux RSS, clients.
+      MEMOS_INSTANCE_URL: ${MEMOS_INSTANCE_URL}
+      # Caddy (VPS) pose X-Forwarded-For ; `tailscale serve` relaie depuis 127.0.0.1,
+      # couvert par la valeur par défaut "private" : le rate-limit voit l'IP réelle.
+      MEMOS_LOG_LEVEL: warn
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5230/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
