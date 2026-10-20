@@ -1,0 +1,12 @@
+[Unit]
+Description=Backup quotidien de Memos
+
+[Timer]
+# Après le vault (03:30) et simple-finance (04:00) : ils partagent le dépôt restic.
+OnCalendar=*-*-* 04:30:00
+RandomizedDelaySec=10min
+# Rattrape un passage manqué (HP éteint / coupure de courant).
+Persistent=true
+
+[Install]
+WantedBy=timers.target

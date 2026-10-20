@@ -13,9 +13,9 @@ Runs on a single VPS behind Caddy with auto Let's Encrypt TLS for the four hostn
 
 Only Caddy publishes ports (80/443). All other services live on the internal Docker network.
 
-## Homelab (Immich + Vaultwarden)
+## Homelab (Immich + Vaultwarden + Memos)
 
-Caddy also fronts `photos.lepgu.fr` (Immich) and `vault.lepgu.fr` (Vaultwarden), which run on a home server reached through Tailscale (no port open on the home router). The `homelab/` folder holds that server's stack and the encrypted Vaultwarden backup to this VPS. Full procedure: [docs/homelab-setup.md](docs/homelab-setup.md). Requires `HOMELAB_TAILNET_IP` in `.env`.
+Caddy also fronts `photos.lepgu.fr` (Immich), `vault.lepgu.fr` (Vaultwarden) and `notes.lepgu.fr` (Memos, quick notes; §16), which run on a home server reached through Tailscale (no port open on the home router). The `homelab/` folder holds that server's stack and the encrypted Vaultwarden backup to this VPS. Full procedure: [docs/homelab-setup.md](docs/homelab-setup.md). Requires `HOMELAB_TAILNET_IP` in `.env`.
 
 Local checks (Mac, needs Docker/OrbStack, not in CI): `homelab/tests/run.sh` runs shellcheck, systemd/sshd/ACL validation, bats tests of the backup script (fake restic/curl), `docker compose config` and `caddy validate`.
 
