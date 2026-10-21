@@ -1167,7 +1167,7 @@ ssh -L 5230:localhost:5230 homelab
 
    ```sh
    cd ~/qui-est-ce_infra && git pull
-   docker compose up -d caddy                # recharge le Caddyfile (bloc notes.lepgu.fr)
+   docker compose restart caddy              # recharge le Caddyfile (bloc notes.lepgu.fr) ; `up -d` ne le recrée pas si seul le Caddyfile a changé
    docker compose logs -f caddy              # certificat Let's Encrypt obtenu
    docker compose exec caddy sh -c 'wget -qO- http://$HOMELAB_TAILNET_IP:5230/healthz'
    curl -I https://notes.lepgu.fr
@@ -1192,7 +1192,27 @@ Contrairement à Keep, Memos ne permet pas de partager une note avec une personn
 - Les Espaces ne servent que si un jour il y a plus de comptes (famille…) et qu'une note ne doit pas être vue de tous. Vérifie alors qu'ils s'affichent dans MoeMemos : rien ne l'indique dans ses notes de version 2.0.7.
 - **Lien de partage** (menu d'une note → *Partager*) : pour quelqu'un sans compte, avec expiration (1, 7 ou 30 jours) et révocable.
 - Organisation : des tags (`#courses`, `#maison`) remplacent les libellés de Keep ; épingle les listes en cours.
-- **Import depuis Keep** : il n'y a pas d'import natif. Google Takeout donne un JSON par note ; à recopier à la main pour les quelques notes à garder (ou à scripter via l'API de Memos si elles sont nombreuses).
+- **Import depuis Keep** : voir §16.4.1.
+
+#### 16.4.1 Importer les notes Google Keep
+
+Memos n'importe pas Keep nativement. [keep-to-memos](https://github.com/Fileboss/keep-to-memos) convertit un export Google Takeout en archive au format d'export de Memos. L'import passe ensuite par l'interface : pas de jeton, pas d'appel d'API. Détails et options dans son README.
+
+1. [takeout.google.com](https://takeout.google.com) : **Tout désélectionner**, cocher seulement **Keep**, export `.zip`, puis décompresser. Chacun fait le sien, depuis son compte Google.
+2. Sur le Mac :
+
+   ```sh
+   git clone https://github.com/Fileboss/keep-to-memos && cd keep-to-memos
+   ./keep_to_memos.py ~/Downloads/Takeout/Keep --dry-run | less          # relire
+   ./keep_to_memos.py ~/Downloads/Takeout/Keep --limit 5 -o essai.zip    # essai
+   ./keep_to_memos.py ~/Downloads/Takeout/Keep -o keep.zip               # complet
+   ```
+
+   Visibilité `private` par défaut ; `--visibility protected` pour que l'autre compte les voie (§16.4).
+3. Dans Memos, **connecté au compte qui doit recevoir les notes** : *Paramètres → Export & Import → Import memos*, choisir `essai.zip`, vérifier l'aperçu, confirmer. Contrôler les dates, les cases à cocher, les tags et les images, puis importer `keep.zip`. Les notes déjà importées sont sautées, réimporter ne crée pas de doublon.
+4. Les notes signalées `[warn]` dépassent 8 Kio et échoueront à l'import. Dans ce cas, relève la limite (*Paramètres → Memo*, en admin) avant l'import complet.
+
+Toutes les notes importées portent le tag `#keep` : cliquer dessus pour les retrouver ou les supprimer (vue **Archivées** comprise). Perdus : couleurs, rappels et partages Keep. Memos limite à une dizaine d'imports par heure (l'aperçu compte pour un).
 
 ### 16.5 Sauvegarde chaque nuit
 
