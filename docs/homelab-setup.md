@@ -1278,7 +1278,7 @@ sudo blkid -s UUID -o value /dev/sdX1           # UUID à noter
 
 Si le disque contient déjà des données à garder, ne le formate pas : le script marche aussi sur un disque ext4, exFAT ou NTFS existant. Le dépôt y occupe seulement un dossier (`HDD_REPO_DIR`).
 
-**Disque NTFS** (format d'usine des WD Elements, et des disques utilisés sous Windows) : Debian 13 le monte en lecture seule par défaut. Installe `ntfs-3g`, un pilote d'écriture éprouvé, et indique-le au script :
+**Disque NTFS** (format d'usine des WD Elements, et des disques utilisés sous Windows) : sans pilote, Debian 13 refuse de le monter (« type de système de fichiers ntfs inconnu »). Installe `ntfs-3g`, un pilote d'écriture éprouvé, et indique-le au script :
 
 ```sh
 sudo apt install -y ntfs-3g
