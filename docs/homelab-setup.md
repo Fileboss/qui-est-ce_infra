@@ -658,7 +658,7 @@ Pour restaurer sur un nouveau serveur : recopie `db.sqlite3`, `rsa_key*`, `attac
 | Beszel (monitoring) | ~mensuel | `BESZEL_VERSION` dans `homelab/monitoring/.env` (et l'agent du VPS), puis `docker compose pull && docker compose up -d` (§14.5) |
 | simple-finance | à chaque release | `FINANCE_VERSION` dans `homelab/simple-finance/.env`, puis `docker compose pull && docker compose up -d` (§15.4) |
 | Memos | quand MoeMemos supporte la nouvelle version | `MEMOS_VERSION` dans `homelab/memos/.env`, backup juste avant, puis `docker compose pull && docker compose up -d` (§16.6) |
-| Backup complet sur disque USB | mensuel | brancher le disque, `sudo systemctl start --no-block hdd-backup` (§17.3) |
+| Backup complet sur disque USB | mensuel | brancher le disque, `hlbackup` (§17.3) |
 | Test de restauration | tous les 3 mois | §9.6 et §17.5 |
 | Espace disque | mensuel | `df -h`, `docker system prune -f` |
 | BIOS HP | annuel | page support HP du 800 G4 Mini, BIOS Q21 ; procédure §2.5 |
@@ -1295,6 +1295,7 @@ sudo install -m 600 hdd-backup.env.example /etc/hdd-backup.env
 sudo editor /etc/hdd-backup.env                 # HDD_UUID ; HDD_HC_PING_URL si tu utilises healthchecks.io
 sudo install -m 750 hdd-backup.sh /usr/local/sbin/hdd-backup.sh
 sudo install -m 644 hdd-backup.service /etc/systemd/system/
+sudo install -m 755 hlbackup /usr/local/bin/hlbackup     # raccourci du §17.3
 sudo systemctl daemon-reload
 sudo hdd-backup.sh --init                       # crée le dépôt sur le disque, puis le démonte
 cd ../monitoring && docker compose up -d        # Beszel suit aussi hdd-backup
@@ -1307,9 +1308,10 @@ Pas de timer : le disque n'est branché que pour le backup. Healthchecks.io (opt
 Branche le disque, puis :
 
 ```sh
-sudo systemctl start --no-block hdd-backup      # tourne en arrière-plan : survit à la fermeture de la session SSH
-sudo journalctl -fu hdd-backup                  # progression chaque minute ; Ctrl-C n'arrête que l'affichage
+hlbackup
 ```
+
+`hlbackup` lance le backup, affiche sa progression (une ligne par minute) et finit par `OK` ou `ÉCHEC`. Le backup tourne dans systemd : Ctrl-C ou une coupure SSH n'arrêtent que l'affichage, et relancer `hlbackup` reprend le suivi. Sans le raccourci : `sudo systemctl start --no-block hdd-backup`, puis `sudo journalctl -fu hdd-backup`.
 
 - **Coupure des services** pendant `restic backup` : Immich, Vaultwarden, Memos, simple-finance et Beszel sont injoignables. Le **premier passage copie tout le SSD**, soit plusieurs heures en USB 3 : lance-le un soir. Les suivants prennent quelques minutes, plus le temps de lire les nouvelles photos. Le nettoyage et la vérification tournent ensuite, services relancés.
 - Fin normale : `Sauvegarde terminée, disque démonté : tu peux le débrancher.` Range-le débranché.

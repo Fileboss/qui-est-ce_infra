@@ -13,6 +13,8 @@ check "bash -n memos-backup.sh" bash -n backup/memos-backup.sh
 check "shellcheck memos-backup.sh" shellcheck backup/memos-backup.sh
 check "bash -n hdd-backup.sh" bash -n backup/hdd-backup.sh
 check "shellcheck hdd-backup.sh" shellcheck backup/hdd-backup.sh
+check "bash -n hlbackup" bash -n backup/hlbackup
+check "shellcheck hlbackup" shellcheck backup/hlbackup
 
 # systemd : l'ExecStart doit exister pour que verify ne se plaigne pas.
 install -m 755 backup/*.sh /usr/local/sbin/

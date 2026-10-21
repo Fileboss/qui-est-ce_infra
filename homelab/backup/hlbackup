@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# hlbackup : lance le backup mensuel sur le disque USB (§17) et affiche sa progression jusqu'à la fin.
+# Ctrl-C ou une coupure SSH n'arrêtent que l'affichage : le backup continue (hlbackup pour le suivre).
+set -uo pipefail
+[ "$EUID" -eq 0 ] || exec sudo "$0" "$@"
+
+UNIT=hdd-backup.service
+
+# Déjà en cours : on reprend l'affichage avec les dernières lignes.
+lines=0
+[ "$(systemctl show -p ActiveState --value "$UNIT")" = activating ] && lines=20
+journalctl -u "$UNIT" -f -n "$lines" -o cat &
+JPID=$!
+trap 'kill "$JPID" 2>/dev/null' EXIT
+trap 'echo; echo "Affichage arrêté, le backup continue. hlbackup pour le suivre."; exit 130' INT
+
+# Sans --no-block : attend la fin du backup. Interrompre systemctl n'annule pas le backup.
+if systemctl start "$UNIT"; then
+  sleep 1; echo "OK : backup terminé."
+else
+  sleep 1; echo "ÉCHEC : sudo journalctl -u $UNIT pour le détail." >&2; exit 1
+fi
