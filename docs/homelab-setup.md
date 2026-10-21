@@ -18,7 +18,7 @@ Procédure complète, de l'OS vierge jusqu'au backup quotidien du vault.
 - Sur le HP, les conteneurs écoutent sur `127.0.0.1` uniquement. `tailscale serve` les expose **sur le tailnet seulement**. On évite ainsi le piège Docker qui contourne `ufw` quand on publie un port sur `0.0.0.0`.
 - Les **ACL Tailscale** limitent les flux : VPS → HP uniquement sur 2283/8222 ; HP → VPS uniquement sur SSH (backup). Si le VPS est compromis, il n'a pas de shell sur le HP.
 - **Backup du vault** : `sqlite3 .backup` (cohérent à chaud) → **restic** chiffre et déduplique **sur le HP** → dépôt envoyé en SFTP sur le VPS, dans un compte enfermé (chroot, SFTP only, uniquement depuis le tailnet). Le VPS ne voit que des blocs chiffrés.
-- Photos : hors périmètre (tu gères). Immich fait déjà des dumps de sa base dans `library/backups`, mais **sur le même SSD que les photos** : sans copie ailleurs, une panne de ce disque perd tout (photos et dumps). Prévois ta propre sauvegarde des photos.
+- **Photos et tout le reste** : une fois par mois, backup complet du HP sur un disque USB externe, chiffré par restic et débranché entre deux passages (§17). Les photos ajoutées depuis le dernier passage ne sont que sur le SSD.
 - **Stockage** : un seul SSD NVMe de 500 Go (le HP n'a qu'un emplacement M.2) porte le système, Postgres, Vaultwarden et les photos. Les photos vont dans `/mnt/data`, simple dossier pour l'instant : le jour où un SSD est ajouté dans la baie 2,5", il suffira de le monter à cet endroit (§2.4) sans toucher à la stack.
 
 Limite connue : un HP compromis pourrait effacer le dépôt distant (il a le droit d'écriture pour le `prune`). Voir §9.7 pour un durcissement optionnel.
@@ -658,7 +658,8 @@ Pour restaurer sur un nouveau serveur : recopie `db.sqlite3`, `rsa_key*`, `attac
 | Beszel (monitoring) | ~mensuel | `BESZEL_VERSION` dans `homelab/monitoring/.env` (et l'agent du VPS), puis `docker compose pull && docker compose up -d` (§14.5) |
 | simple-finance | à chaque release | `FINANCE_VERSION` dans `homelab/simple-finance/.env`, puis `docker compose pull && docker compose up -d` (§15.4) |
 | Memos | quand MoeMemos supporte la nouvelle version | `MEMOS_VERSION` dans `homelab/memos/.env`, backup juste avant, puis `docker compose pull && docker compose up -d` (§16.6) |
-| Test de restauration | tous les 3 mois | §9.6 |
+| Backup complet sur disque USB | mensuel | brancher le disque, `sudo systemctl start --no-block hdd-backup` (§17.3) |
+| Test de restauration | tous les 3 mois | §9.6 et §17.5 |
 | Espace disque | mensuel | `df -h`, `docker system prune -f` |
 | BIOS HP | annuel | page support HP du 800 G4 Mini, BIOS Q21 ; procédure §2.5 |
 
@@ -876,7 +877,8 @@ Limite : quelqu'un qui emporte le HP peut sortir le NVMe et le lire ailleurs. Se
 
 **7. Sauvegarde des photos** (à planifier)
 
-- [ ] Copie locale nocturne sur un disque dans la baie 2,5" (§2.4).
+- [x] Copie locale mensuelle sur disque USB externe (§17).
+- [ ] Copie locale nocturne sur un disque dans la baie 2,5" (§2.4), pour réduire la perte à une journée.
 - [ ] Copie hors site chiffrée avec restic (Storage Box Hetzner, Backblaze B2… quelques €/To/mois), sur le modèle du §9.
 
 **8. Backup du vault en append-only** (optionnel, §9.7)
@@ -1113,7 +1115,7 @@ sudo rm -rf /tmp/sf
 
 - **Mise à jour** : `FINANCE_VERSION` dans `.env` (version sans le `v`, ex. `0.2.0`), puis `docker compose pull && docker compose up -d`. L'app migre sa base au démarrage : le backup de la nuit précédente suffit comme point de retour.
 - Ces chiffres sont personnels : **ne publie jamais l'app via Caddy**, elle n'a pas de login. La base est en clair sur le SSD du HP ; la sauvegarde sur le VPS est chiffrée.
-- Le disque externe de 3 mois, s'il est mis en place, doit aussi contenir `/opt/homelab/simple-finance`.
+- Le backup mensuel sur disque USB (§17) contient aussi `/opt/homelab/simple-finance`.
 
 ## 16. Memos (notes rapides, remplace Google Keep)
 
@@ -1251,4 +1253,87 @@ sudo rm -rf /tmp/memos
 - `notes.lepgu.fr` est public : mots de passe longs et uniques. Le rate-limit de Memos voit l'IP réelle des clients (Caddy la transmet ; `tailscale serve` relaie depuis `127.0.0.1`, que Memos considère comme proxy de confiance).
 - Vérifie de temps en temps que l'inscription est toujours fermée : en navigation privée, `https://notes.lepgu.fr/auth/signup` doit afficher « Les inscriptions sont fermées ». Avec l'accès public désactivé, `/explore` ne doit rien montrer sans connexion.
 - Les notes sont en clair dans la base sur le SSD du HP (pas de chiffrement de bout en bout comme Vaultwarden) : n'y mets pas de mots de passe. La sauvegarde sur le VPS est chiffrée.
-- Le disque externe de 3 mois, s'il est mis en place, doit aussi contenir `/opt/homelab/memos`.
+- Le backup mensuel sur disque USB (§17) contient aussi `/opt/homelab/memos`.
+
+## 17. Backup complet mensuel sur disque USB
+
+Les backups nocturnes vers le VPS (§9, §15.3, §16.5) ne contiennent que les petites bases. Une fois par mois, `hdd-backup.sh` copie **tout le HP** sur le disque USB externe de 12 To : photos, données de toutes les apps, fichiers `.env`, configuration du système.
+
+- **Dépôt restic chiffré** sur le disque, avec le même mot de passe que le dépôt du VPS (§9.3). Un disque perdu ou volé ne révèle rien. Restic déduplique : seul le premier passage copie tout, les suivants n'envoient que les changements.
+- **À froid** : le script arrête tous les conteneurs pendant la copie, puis les redémarre. Postgres (Immich) et les bases SQLite sont donc copiés dans un état cohérent, sans dump.
+- **Débranché entre deux passages** : un HP compromis ou un rançongiciel ne peut pas l'atteindre. Le disque reste à la maison, donc un incendie ou un cambriolage emporte les deux copies. Seule une copie hors site couvre ce cas (§13.3, point 7).
+- Rétention : 24 mensuels et 10 annuels. Chaque passage relit et déchiffre 5 % du dépôt pour repérer un disque qui commence à corrompre les données.
+
+### 17.1 Préparer le disque (une fois)
+
+⚠️ Le formatage efface tout le disque. Vérifie deux fois que c'est le bon.
+
+```sh
+lsblk -o NAME,SIZE,MODEL,TRAN,FSTYPE,LABEL      # le disque USB : TRAN=usb, ~10,9T
+sudo wipefs -a /dev/sdX
+sudo parted -s /dev/sdX mklabel gpt mkpart backup ext4 0% 100%
+sudo mkfs.ext4 -m 0 -T largefile -L backup /dev/sdX1    # -m 0 : pas de place réservée à root, inutile ici
+sudo blkid -s UUID -o value /dev/sdX1           # UUID à noter
+```
+
+Si le disque contient déjà des données à garder, ne le formate pas : le script marche aussi sur un disque ext4 ou exFAT existant. Le dépôt y occupe seulement un dossier (`HDD_REPO_DIR`).
+
+### 17.2 Installer
+
+```sh
+cd /opt/homelab/infra/homelab/backup
+sudo install -m 600 hdd-backup.env.example /etc/hdd-backup.env
+sudo editor /etc/hdd-backup.env                 # HDD_UUID ; HDD_HC_PING_URL si tu utilises healthchecks.io
+sudo install -m 750 hdd-backup.sh /usr/local/sbin/hdd-backup.sh
+sudo install -m 644 hdd-backup.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo hdd-backup.sh --init                       # crée le dépôt sur le disque, puis le démonte
+cd ../monitoring && docker compose up -d        # Beszel suit aussi hdd-backup
+```
+
+Pas de timer : le disque n'est branché que pour le backup. Healthchecks.io (optionnel) : crée un check avec une période de 31 jours et une marge de 7 jours. Il te prévient si un backup échoue, et aussi si tu oublies celui du mois.
+
+### 17.3 Chaque mois
+
+Branche le disque, puis :
+
+```sh
+sudo systemctl start --no-block hdd-backup      # tourne en arrière-plan : survit à la fermeture de la session SSH
+sudo journalctl -fu hdd-backup                  # progression chaque minute ; Ctrl-C n'arrête que l'affichage
+```
+
+- **Coupure des services** pendant `restic backup` : Immich, Vaultwarden, Memos, simple-finance et Beszel sont injoignables. Le **premier passage copie tout le SSD**, soit plusieurs heures en USB 3 : lance-le un soir. Les suivants prennent quelques minutes, plus le temps de lire les nouvelles photos. Le nettoyage et la vérification tournent ensuite, services relancés.
+- Fin normale : `Sauvegarde terminée, disque démonté : tu peux le débrancher.` Range-le débranché.
+- En cas d'échec, les conteneurs sont redémarrés et le disque démonté quand même. Le journal donne la cause. Vérifie avec `docker ps` que tout est reparti.
+
+### 17.4 Ce qui est sauvegardé
+
+Tout `/` (et `/boot`, `/boot/efi`, `/mnt/data` s'ils sont sur des partitions ou un disque à part) :
+- `/opt/homelab` : les données de toutes les apps, le dépôt git et les fichiers `.env` (ceux que le §9.3 te demande de copier hors du HP) ;
+- `/mnt/data` : les photos Immich ;
+- `/etc`, `/root`, `/home`, `/usr/local/sbin` : configuration, clés SSH, état Tailscale, scripts de backup.
+
+Sont exclus `/var/lib/docker` et `/var/lib/containerd` (images et cache des modèles d'Immich, re-téléchargés au démarrage), les caches et les fichiers temporaires.
+
+### 17.5 Restaurer
+
+Disque branché sur le HP :
+
+```sh
+sudo install -d /mnt/backup-hdd && sudo mount /dev/disk/by-uuid/<UUID> /mnt/backup-hdd
+export RESTIC_REPOSITORY=/mnt/backup-hdd/homelab-restic RESTIC_PASSWORD_FILE=/root/.config/restic/password
+sudo -E restic snapshots
+sudo -E restic restore latest --include /opt/homelab/memos --target /tmp/restore    # un dossier
+sudo umount /mnt/backup-hdd
+```
+
+**Test** tous les trois mois, avec le §9.6 : restaure `/opt/homelab/vaultwarden/data` dans `/tmp`, puis lance `sqlite3 …/db.sqlite3 'PRAGMA integrity_check;'`.
+
+**HP mort ou SSD changé** : réinstalle Debian, Docker et Tailscale (§2 à §4), puis installe `restic` et remets le mot de passe dans `/root/.config/restic/password`. Restaure tout dans un dossier à part (`--target /tmp/restore`), puis recopie ce dont tu as besoin, sans écraser `/` :
+- `/opt/homelab` et `/mnt/data` (avec `rsync -aHAX`, pour garder les propriétaires) ;
+- `/etc/vaultwarden-backup.env`, `/etc/hdd-backup.env`, `/root/.ssh`, `/root/.config/restic` ;
+- les scripts et unités de backup (§9.4, §15.3, §16.5, §17.2).
+
+Ensuite, `docker compose up -d` dans chaque stack. Ne recopie pas `/etc` en entier : `fstab`, `machine-id` et les clés SSH de l'hôte sont propres à la nouvelle installation. Remets `tailscale serve` (§4.4) si le HP a changé d'identité sur le tailnet.
+
+Le disque est en ext4 : macOS ne le lit pas. Pour restaurer depuis une autre machine, il faut un Linux (une VM convient).

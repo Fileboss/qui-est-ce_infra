@@ -1,0 +1,12 @@
+[Unit]
+Description=Backup complet du HP sur le disque USB externe
+# Pas de timer : lancé à la main une fois par mois, disque branché (§17).
+After=docker.service local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/hdd-backup.sh
+# Une ligne de progression par minute dans le journal.
+Environment=RESTIC_PROGRESS_FPS=0.0167
+Nice=10
+NoNewPrivileges=true
