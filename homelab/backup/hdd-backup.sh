@@ -61,7 +61,8 @@ trap cleanup EXIT
 [ -e "$DEV" ] || die "Disque introuvable ($DEV) : est-il branché ?"
 install -d -m 700 "$MNT"
 if ! mountpoint -q "$MNT"; then
-  mount "$DEV" "$MNT"
+  # HDD_FSTYPE vide : type détecté par mount. Disque NTFS : ntfs-3g (voir hdd-backup.env.example).
+  mount ${HDD_FSTYPE:+-t "$HDD_FSTYPE"} "$DEV" "$MNT"
   MOUNTED_BY_US=1
 fi
 # Garde-fou : sans ça, un montage raté ferait écrire le dépôt sur le SSD système.

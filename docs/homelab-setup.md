@@ -1276,7 +1276,16 @@ sudo mkfs.ext4 -m 0 -T largefile -L backup /dev/sdX1    # -m 0 : pas de place r�
 sudo blkid -s UUID -o value /dev/sdX1           # UUID à noter
 ```
 
-Si le disque contient déjà des données à garder, ne le formate pas : le script marche aussi sur un disque ext4 ou exFAT existant. Le dépôt y occupe seulement un dossier (`HDD_REPO_DIR`).
+Si le disque contient déjà des données à garder, ne le formate pas : le script marche aussi sur un disque ext4, exFAT ou NTFS existant. Le dépôt y occupe seulement un dossier (`HDD_REPO_DIR`).
+
+**Disque NTFS** (format d'usine des WD Elements, et des disques utilisés sous Windows) : Debian 13 le monte en lecture seule par défaut. Installe `ntfs-3g`, un pilote d'écriture éprouvé, et indique-le au script :
+
+```sh
+sudo apt install -y ntfs-3g
+# dans /etc/hdd-backup.env (§17.2) : HDD_FSTYPE=ntfs-3g
+```
+
+Si `ntfs-3g` refuse de monter le disque parce qu'il a été débranché sans être éjecté (volume marqué « dirty »), branche-le sur un PC Windows, laisse-le vérifier le disque, puis éjecte-le proprement.
 
 ### 17.2 Installer
 
@@ -1336,4 +1345,4 @@ sudo umount /mnt/backup-hdd
 
 Ensuite, `docker compose up -d` dans chaque stack. Ne recopie pas `/etc` en entier : `fstab`, `machine-id` et les clés SSH de l'hôte sont propres à la nouvelle installation. Remets `tailscale serve` (§4.4) si le HP a changé d'identité sur le tailnet.
 
-Le disque est en ext4 : macOS ne le lit pas. Pour restaurer depuis une autre machine, il faut un Linux (une VM convient).
+Pour restaurer depuis une autre machine : un disque ext4 ne se lit que sous Linux (une VM convient). Un disque NTFS se lit sous Windows, et sous Linux avec `ntfs-3g`. Il faut aussi `restic` et le mot de passe.

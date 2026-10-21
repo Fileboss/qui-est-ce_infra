@@ -18,7 +18,7 @@ grep -qxF "${*: -1}" "$MOUNTED"
 R
   cat >"$T/bin/mount" <<'R'
 #!/usr/bin/env bash
-echo "mount $*" >>"$LOG"; echo "$2" >>"$MOUNTED"
+echo "mount $*" >>"$LOG"; echo "${*: -1}" >>"$MOUNTED"
 R
   cat >"$T/bin/umount" <<'R'
 #!/usr/bin/env bash
@@ -145,6 +145,13 @@ teardown() { rm -rf "$T"; }
   FAKE_RUNNING="" run bash "$SCRIPT"
   [ "$status" -eq 0 ]
   ! grep -q '^docker' "$LOG"
+}
+
+@test "HDD_FSTYPE défini : passé à mount" {
+  echo HDD_FSTYPE=ntfs-3g >>"$ENV_FILE"
+  run bash "$SCRIPT"
+  [ "$status" -eq 0 ]
+  grep -qx "mount -t ntfs-3g $T/dev $T/mnt" "$LOG"
 }
 
 @test "disque déjà monté : laissé monté à la fin" {
