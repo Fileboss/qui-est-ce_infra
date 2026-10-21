@@ -1,0 +1,13 @@
+[Unit]
+Description=Démarre le backup hors site si le PC des parents est en ligne
+After=tailscaled.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/offsite-backup.sh --probe
+# Lancé toutes les 5 minutes : pas de lignes « Started/Finished » dans le journal à chaque fois.
+LogLevelMax=notice
+# Le script n'écrit que ses erreurs : elles passent le filtre.
+SyslogLevel=warning
+PrivateTmp=true
+NoNewPrivileges=true

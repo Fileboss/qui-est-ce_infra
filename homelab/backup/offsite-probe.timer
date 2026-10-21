@@ -1,0 +1,11 @@
+[Unit]
+Description=Guette le PC des parents sur le tailnet (backup hors site)
+
+[Timer]
+OnBootSec=2min
+# Le backup démarre au plus 5 minutes après l'allumage du PC.
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

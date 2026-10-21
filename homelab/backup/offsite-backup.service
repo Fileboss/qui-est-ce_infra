@@ -1,0 +1,19 @@
+[Unit]
+Description=Backup hors site du HP vers le PC chez les parents
+# Démarré par offsite-probe.timer dès que le PC est en ligne, ou à la main (§18.7).
+Wants=network-online.target tailscaled.service
+After=network-online.target tailscaled.service docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/offsite-backup.sh
+# Une ligne de progression par minute dans le journal.
+Environment=RESTIC_PROGRESS_FPS=0.0167
+# systemd ne définit pas $HOME : cache restic explicite (/var/cache est exclu des backups).
+CacheDirectory=restic
+Environment=RESTIC_CACHE_DIR=/var/cache/restic
+Nice=10
+IOSchedulingClass=idle
+# Durcissement
+PrivateTmp=true
+NoNewPrivileges=true

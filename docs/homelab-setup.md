@@ -18,7 +18,7 @@ Procédure complète, de l'OS vierge jusqu'au backup quotidien du vault.
 - Sur le HP, les conteneurs écoutent sur `127.0.0.1` uniquement. `tailscale serve` les expose **sur le tailnet seulement**. On évite ainsi le piège Docker qui contourne `ufw` quand on publie un port sur `0.0.0.0`.
 - Les **ACL Tailscale** limitent les flux : VPS → HP uniquement sur 2283/8222 ; HP → VPS uniquement sur SSH (backup). Si le VPS est compromis, il n'a pas de shell sur le HP.
 - **Backup du vault** : `sqlite3 .backup` (cohérent à chaud) → **restic** chiffre et déduplique **sur le HP** → dépôt envoyé en SFTP sur le VPS, dans un compte enfermé (chroot, SFTP only, uniquement depuis le tailnet). Le VPS ne voit que des blocs chiffrés.
-- **Photos et tout le reste** : une fois par mois, backup complet du HP sur un disque USB externe, chiffré par restic et débranché entre deux passages (§17). Les photos ajoutées depuis le dernier passage ne sont que sur le SSD.
+- **Photos et tout le reste** : une fois par mois, backup complet du HP sur un disque USB externe, chiffré par restic et débranché entre deux passages (§17). Copie hors site sur un PC chez les parents à chaque visite, en ajout seul (§18). Les photos ajoutées depuis le dernier passage ne sont que sur le SSD.
 - **Stockage** : un seul SSD NVMe de 500 Go (le HP n'a qu'un emplacement M.2) porte le système, Postgres, Vaultwarden et les photos. Les photos vont dans `/mnt/data`, simple dossier pour l'instant : le jour où un SSD est ajouté dans la baie 2,5", il suffira de le monter à cet endroit (§2.4) sans toucher à la stack.
 
 Limite connue : un HP compromis pourrait effacer le dépôt distant (il a le droit d'écriture pour le `prune`). Voir §9.7 pour un durcissement optionnel.
@@ -659,7 +659,9 @@ Pour restaurer sur un nouveau serveur : recopie `db.sqlite3`, `rsa_key*`, `attac
 | simple-finance | à chaque release | `FINANCE_VERSION` dans `homelab/simple-finance/.env`, puis `docker compose pull && docker compose up -d` (§15.4) |
 | Memos | quand MoeMemos supporte la nouvelle version | `MEMOS_VERSION` dans `homelab/memos/.env`, backup juste avant, puis `docker compose pull && docker compose up -d` (§16.6) |
 | Backup complet sur disque USB | mensuel | brancher le disque, `hlbackup` (§17.3) |
-| Test de restauration | tous les 3 mois | §9.6 et §17.5 |
+| Backup hors site | à chaque visite chez les parents | allumer le PC, il s'éteint seul à la fin (§18.7) |
+| Ménage du dépôt hors site, état du disque | 1 à 2 fois par an | sur le PC des parents (§18.8) |
+| Test de restauration | tous les 3 mois | §9.6, §17.5 et §18.8 |
 | Espace disque | mensuel | `df -h`, `docker system prune -f` |
 | Vulnérabilités des images | quotidien, automatique | workflow *Vulnérabilités des images* (GitHub Actions) : un mail arrive s'il échoue, mettre à jour l'image signalée puis la version dans le `.env.example`. Voir le README |
 | BIOS HP | annuel | page support HP du 800 G4 Mini, BIOS Q21 ; procédure §2.5 |
@@ -880,7 +882,7 @@ Limite : quelqu'un qui emporte le HP peut sortir le NVMe et le lire ailleurs. Se
 
 - [x] Copie locale mensuelle sur disque USB externe (§17).
 - [ ] Copie locale nocturne sur un disque dans la baie 2,5" (§2.4), pour réduire la perte à une journée.
-- [ ] Copie hors site chiffrée avec restic (Storage Box Hetzner, Backblaze B2… quelques €/To/mois), sur le modèle du §9.
+- [x] Copie hors site chiffrée avec restic, en ajout seul, sur un PC chez les parents (§18).
 
 **8. Backup du vault en append-only** (optionnel, §9.7)
 
@@ -1349,3 +1351,181 @@ sudo umount /mnt/backup-hdd
 Ensuite, `docker compose up -d` dans chaque stack. Ne recopie pas `/etc` en entier : `fstab`, `machine-id` et les clés SSH de l'hôte sont propres à la nouvelle installation. Remets `tailscale serve` (§4.4) si le HP a changé d'identité sur le tailnet.
 
 Pour restaurer depuis une autre machine : un disque ext4 ne se lit que sous Linux (une VM convient). Un disque NTFS se lit sous Windows, et sous Linux avec `ntfs-3g`. Il faut aussi `restic` et le mot de passe.
+
+## 18. Backup hors site chez les parents
+
+Le disque USB (§17) reste à la maison : un incendie ou un cambriolage emporterait le HP et sa copie. Un vieux PC fixe chez tes parents (disque de 2 To), sur le tailnet, reçoit une troisième copie. Il est éteint la plupart du temps ; tu l'allumes en arrivant.
+
+```
+ HP (maison)                                      PC des parents (Debian, tag:offsite)
+ offsite-probe.timer, toutes les 5 min ──tailnet──▶ rest-server --append-only  127.0.0.1:8000
+   PC en ligne ? → offsite-backup.service           /srv/restic/homelab (dépôt restic chiffré)
+   fin du backup ──SSH, clé à commande forcée──────▶ hlpower : offsite-poweroff → extinction
+```
+
+- **Tu allumes le PC, c'est tout.** Le HP le voit arriver sur le tailnet (au plus 5 min), lance le backup, puis l'éteint. Une fois par visite : rien n'est relancé dans les 12 h qui suivent un succès.
+- **Aucune coupure des services** : contrairement au §17, le transfert passe par Internet et peut durer. Le script vide la base d'Immich (`pg_dumpall`), copie les bases SQLite (`sqlite3 .backup`), et sauvegarde tel quel le reste : photos, `/opt/homelab`, `/etc`, `/root`, `/home`, `/usr/local`. Ne partent pas : les miniatures et vidéos réencodées d'Immich (régénérées), le monitoring, les caches.
+- **Ajout seul** : le rest-server accepte de nouveaux snapshots mais refuse toute suppression. Un HP compromis ou un rançongiciel ne peut pas effacer cette copie. Le ménage se fait sur le PC lui-même (§18.8).
+- **Le PC n'atteint rien** : les ACL ne laissent passer que le HP vers le PC (rest-server et SSH). La clé SSH du HP ne sait qu'éteindre le PC, et seulement si personne ne s'en sert.
+- **Chiffré par restic** (même mot de passe que §9.3) : rien n'est lisible sur le PC sans lui.
+- **Échec** : le PC reste allumé et le HP réessaie toutes les heures tant qu'il est en ligne. Tu le vois dans le journal du HP ou par healthchecks.io.
+
+### 18.1 Installer Debian sur le PC
+
+Même installateur que le §2.0, avec ces différences :
+
+- **Nom de machine** : `offsite`. Branche le PC **en Ethernet** sur la box de tes parents si possible.
+- **Partitionnement** :
+  - un seul disque (le 2 To) : *Assisté, utiliser un disque entier*, tout dans une seule partition. Le dépôt sera un dossier de `/`.
+  - un SSD + le 2 To : le système sur le SSD comme au §2.0 ; le 2 To en une partition ext4 montée sur `/srv/restic` (*Point de montage* → *Autre*).
+- **Logiciels** : comme le HP, « serveur SSH » et « utilitaires usuels » seulement. Une interface graphique s'ajoute plus tard sans rien casser (§18.9).
+
+Puis, depuis le Mac sur le réseau de tes parents (ou devant le PC) :
+
+```sh
+sudo apt update && sudo apt full-upgrade -y
+sudo apt install -y curl ufw restic restic-rest-server apache2-utils smartmontools unattended-upgrades
+```
+
+Clé SSH, durcissement de `sshd` et pare-feu : comme aux §2.2 et §2.3, en adaptant le réseau local de la box (souvent `192.168.1.0/24`). Pas de reboot automatique : le PC est rarement allumé.
+
+**État du disque** (il est vieux) :
+
+```sh
+sudo smartctl -H -A /dev/sda      # le disque de 2 To (lsblk pour le repérer)
+```
+
+`SMART overall-health … PASSED`, et `Reallocated_Sector_Ct`, `Current_Pending_Sector`, `Offline_Uncorrectable` à 0 (colonne `RAW_VALUE`). Sinon, le disque est en fin de vie : remplace-le avant de lui confier quoi que ce soit.
+
+### 18.2 Copier les fichiers du repo sur le PC
+
+Depuis le Mac, dans le repo :
+
+```sh
+scp homelab/offsite/* <user>@<ip-du-pc>:/tmp/
+```
+
+### 18.3 Tailscale
+
+1. Recolle `homelab/tailscale/acl.hujson` dans la console Tailscale (§4.1) : il ajoute `tag:offsite` et ses deux règles.
+2. Sur le PC :
+
+   ```sh
+   curl -fsSL https://tailscale.com/install.sh | sh
+   sudo tailscale up --advertise-tags=tag:offsite --accept-dns=false
+   tailscale ip -4                   # IP du PC : OFFSITE_HOST, côté HP
+   ```
+
+Taggé, l'appareil n'expire pas : il revient sur le tailnet à chaque allumage, même après des mois.
+
+### 18.4 rest-server en ajout seul (PC)
+
+```sh
+sudo install -d -o restic-rest-server -g restic-rest-server -m 750 /srv/restic
+sudo install -m 644 /tmp/restic-rest-server /etc/default/restic-rest-server
+openssl rand -hex 24                  # mot de passe du rest-server : à noter pour OFFSITE_REST_PASSWORD
+sudo htpasswd -B /etc/restic-rest-server/users.htpasswd homelab     # colle-le deux fois
+sudo systemctl enable restic-rest-server && sudo systemctl restart restic-rest-server
+sudo tailscale serve --bg --tcp 8000 tcp://localhost:8000
+systemctl status restic-rest-server --no-pager | head -5            # active (running)
+```
+
+Depuis le HP, `curl -s -o /dev/null -w '%{http_code}\n' http://<OFFSITE_HOST>:8000/` doit répondre `401` (le serveur répond, sans identifiants).
+
+### 18.5 Extinction par le HP
+
+Sur le PC, un compte `hlpower` qui ne peut lancer que `offsite-poweroff` :
+
+```sh
+sudo adduser --system --group --no-create-home --home /nonexistent --shell /bin/sh hlpower
+sudo install -m 755 /tmp/offsite-poweroff /usr/local/sbin/offsite-poweroff
+sudo install -m 440 /tmp/sudoers-hlpower /etc/sudoers.d/hlpower && sudo visudo -c
+sudo install -m 644 /tmp/sshd-hlpower.conf /etc/ssh/sshd_config.d/50-hlpower.conf
+sudo sed -i 's/^AllowUsers .*/& hlpower/' /etc/ssh/sshd_config.d/50-hardening.conf     # sinon sshd le refuse
+sudo install -d -m 755 /etc/ssh/authorized_keys
+```
+
+Sur le HP, une clé dédiée :
+
+```sh
+sudo ssh-keygen -t ed25519 -N '' -C hp-offsite-power -f /root/.ssh/offsite_power
+sudo cat /root/.ssh/offsite_power.pub
+```
+
+Sur le PC, autorise-la depuis le tailnet seulement, puis recharge `sshd` :
+
+```sh
+echo 'from="100.64.0.0/10",restrict ssh-ed25519 AAAA… hp-offsite-power' | sudo tee /etc/ssh/authorized_keys/hlpower
+sudo sshd -t && sudo systemctl reload ssh
+```
+
+Test depuis le HP, pendant que tu es connecté en SSH au PC : il répond `PC utilisé (<user>) : pas d'extinction.` et enregistre la clé d'hôte du PC (réponds `yes`), nécessaire pour la suite.
+
+```sh
+sudo ssh -i /root/.ssh/offsite_power hlpower@<OFFSITE_HOST>
+```
+
+`offsite-poweroff` n'éteint pas le PC si quelqu'un y a une session ouverte (bureau, console ou SSH) : tu ne te le feras pas couper sous les doigts.
+
+### 18.6 Script et timer (HP)
+
+```sh
+cd /opt/homelab/infra/homelab/backup
+sudo install -m 600 offsite-backup.env.example /etc/offsite-backup.env
+sudo editor /etc/offsite-backup.env             # OFFSITE_HOST, OFFSITE_REST_PASSWORD ; OFFSITE_HC_PING_URL si healthchecks.io
+sudo install -m 750 offsite-backup.sh /usr/local/sbin/offsite-backup.sh
+sudo install -m 644 offsite-backup.service offsite-probe.service offsite-probe.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+# Dépôt restic sur le PC (allumé), avec le même mot de passe que les autres :
+sudo bash -c 'set -a; . /etc/offsite-backup.env
+  RESTIC_REPOSITORY=rest:http://$OFFSITE_HOST:8000/homelab/ RESTIC_REST_USERNAME=homelab RESTIC_REST_PASSWORD=$OFFSITE_REST_PASSWORD
+  restic init'
+sudo systemctl enable --now offsite-probe.timer
+cd ../monitoring && docker compose up -d        # Beszel suit aussi offsite-backup
+```
+
+Le timer voit le PC allumé et lance le premier backup dans les 5 minutes. **Premier passage** : environ 150 Go à envoyer, donc plusieurs heures selon l'upload de ta box (≈ 3 h 30 à 100 Mbit/s). Si le PC est éteint en cours de route, rien n'est perdu : ce qui est déjà envoyé reste sur le PC et n'est pas renvoyé au passage suivant. Pour éviter l'attente, tu peux faire ce premier passage avec le PC chez toi, sur ton réseau. Si l'envoi gêne l'usage d'Internet chez toi, fixe `OFFSITE_LIMIT_UPLOAD` (en Kio/s).
+
+Healthchecks.io (optionnel) : période 60 jours et marge 14 jours, à adapter au rythme de tes visites.
+
+### 18.7 À chaque visite
+
+1. Allume le PC.
+2. C'est tout : il s'éteint seul à la fin. Pour suivre depuis le Mac ou le téléphone : `ssh homelab`, puis `sudo journalctl -fu offsite-backup` (Ctrl-C n'arrête que l'affichage).
+
+- Les passages suivants n'envoient que les nouveautés : quelques minutes, plus les nouvelles photos.
+- Lancer un backup sans attendre, ou malgré un succès il y a moins de 12 h : `sudo systemctl start --no-block offsite-backup` sur le HP.
+- Tu veux te servir du PC : connecte-toi avant la fin du backup (il ne s'éteindra pas), ou mets `OFFSITE_POWEROFF=no` dans `/etc/offsite-backup.env`.
+
+### 18.8 Ménage, restauration, entretien
+
+**Ménage** (une ou deux fois par an ; 2 To laissent des années de marge). Le HP ne peut pas supprimer : ça se fait sur le PC, avec le mot de passe restic tapé à la main :
+
+```sh
+sudo -u restic-rest-server restic --no-cache -r /srv/restic/homelab snapshots
+sudo -u restic-rest-server restic --no-cache -r /srv/restic/homelab forget --keep-monthly 24 --keep-yearly 10 --prune
+```
+
+**Restaurer** depuis le HP (PC allumé) :
+
+```sh
+sudo bash -c 'set -a; . /etc/offsite-backup.env
+  RESTIC_REPOSITORY=rest:http://$OFFSITE_HOST:8000/homelab/ RESTIC_REST_USERNAME=homelab RESTIC_REST_PASSWORD=$OFFSITE_REST_PASSWORD
+  restic snapshots
+  restic restore latest --include /opt/homelab/memos --target /tmp/restore'
+```
+
+Ou directement sur le PC (HP mort) : `restic -r /srv/restic/homelab restore latest --target …`, en root.
+
+- Bases SQLite : les copies cohérentes sont dans `/var/backups/offsite-stage/sqlite/<chemin d'origine>` du snapshot. Les fichiers vivants sont exclus. Remise en place : comme au §16.5 (Memos), propriétaire 1000:1000.
+- Immich : la base est dans `/var/backups/offsite-stage/immich-db.sql`. Restauration dans un Postgres neuf : procédure *Restore* de la [doc Immich](https://immich.app/docs/administration/backup-and-restore), avec ce fichier. Les photos sont sous `/mnt/data/immich/library` ; Immich régénère miniatures et vidéos.
+
+**Entretien du PC** : à chaque visite qui le permet, `sudo apt update && sudo apt full-upgrade` (Tailscale compris). Une fois par an, l'état du disque (§18.1, `smartctl`).
+
+### 18.9 Plus tard : une interface graphique
+
+```sh
+sudo apt install -y task-xfce-desktop      # ou task-gnome-desktop ; redémarre ensuite
+```
+
+Rien d'autre à changer : tant que tu es connecté au bureau, le HP n'éteint pas le PC à la fin du backup (§18.5). Un écran de connexion sans personne de connecté ne bloque pas l'extinction.

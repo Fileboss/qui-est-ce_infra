@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# À installer sur le PC hors site : /usr/local/sbin/offsite-poweroff (§18.5).
+# Commande forcée du compte hlpower : la seule chose que la clé SSH du HP permet, éteindre le PC
+# à la fin du backup. Ne fait rien si quelqu'un s'en sert (session graphique, console ou SSH).
+set -euo pipefail
+
+me=$(id -un)
+busy=()
+for s in $(loginctl list-sessions --no-legend | awk '{print $1}'); do
+  user=$(loginctl show-session "$s" -p Name --value)
+  class=$(loginctl show-session "$s" -p Class --value)
+  [ "$user" != "$me" ] || continue
+  # Ignorées : écran de connexion (greeter), gestionnaire de services d'un compte (manager).
+  [ "$class" = user ] || continue
+  busy+=("$user")
+done
+
+if [ "${#busy[@]}" -gt 0 ]; then
+  echo "PC utilisé (${busy[*]}) : pas d'extinction."
+  exit 0
+fi
+echo "Extinction du PC."
+exec sudo -n /usr/bin/systemctl poweroff

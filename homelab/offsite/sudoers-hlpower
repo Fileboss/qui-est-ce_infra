@@ -1,0 +1,3 @@
+# À installer sur le PC hors site : /etc/sudoers.d/hlpower (root:root, chmod 440), §18.5.
+# Le compte hlpower ne peut lancer que l'extinction.
+hlpower ALL=(root) NOPASSWD: /usr/bin/systemctl poweroff

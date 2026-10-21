@@ -58,7 +58,7 @@ services:
       TOKEN: ${BESZEL_TOKEN}
       KEY: ${BESZEL_KEY}
       # Services systemd suivis (sinon tous ceux qui ont tourné au moins une fois).
-      SERVICE_PATTERNS: vaultwarden-backup*,finance-backup*,memos-backup*,hdd-backup*,tailscaled*,docker*,ssh*,unattended-upgrades*,systemd-timesyncd*
+      SERVICE_PATTERNS: vaultwarden-backup*,finance-backup*,memos-backup*,hdd-backup*,offsite-backup*,tailscaled*,docker*,ssh*,unattended-upgrades*,systemd-timesyncd*
       # Interfaces réseau affichées. Vide = toutes (moins les interfaces Docker virtuelles).
       NICS: ${BESZEL_NICS:-}
     healthcheck:

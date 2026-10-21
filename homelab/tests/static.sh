@@ -16,13 +16,19 @@ check "shellcheck hdd-backup.sh" shellcheck backup/hdd-backup.sh
 check "bash -n hlbackup" bash -n backup/hlbackup
 check "shellcheck hlbackup" shellcheck backup/hlbackup
 check "shellcheck scan-images.sh" shellcheck ../security/scan-images.sh
+check "bash -n offsite-backup.sh" bash -n backup/offsite-backup.sh
+check "shellcheck offsite-backup.sh" shellcheck backup/offsite-backup.sh
+check "bash -n offsite-poweroff" bash -n offsite/offsite-poweroff
+check "shellcheck offsite-poweroff" shellcheck offsite/offsite-poweroff
+check "sudoers hlpower" visudo -cf offsite/sudoers-hlpower
 
 # systemd : l'ExecStart doit exister pour que verify ne se plaigne pas.
 install -m 755 backup/*.sh /usr/local/sbin/
 cp backup/*.service backup/*.timer /etc/systemd/system/
 check "systemd-analyze verify (services + timers)" \
   systemd-analyze verify /etc/systemd/system/vaultwarden-backup.{service,timer} /etc/systemd/system/finance-backup.{service,timer} \
-    /etc/systemd/system/memos-backup.{service,timer} /etc/systemd/system/hdd-backup.service
+    /etc/systemd/system/memos-backup.{service,timer} /etc/systemd/system/hdd-backup.service \
+    /etc/systemd/system/offsite-backup.service /etc/systemd/system/offsite-probe.{service,timer}
 
 # sshd : la conf du compte de backup, testée avec un utilisateur vwbackup.
 ssh-keygen -A >/dev/null 2>&1
@@ -38,6 +44,20 @@ sshd_effective() {
   done
 }
 check "sshd : syntaxe et valeurs effectives pour vwbackup" sshd_effective
+
+# sshd du PC hors site : le compte hlpower ne peut qu'éteindre le PC.
+adduser --system --group --no-create-home --home /nonexistent --shell /bin/sh hlpower >/dev/null 2>&1
+install -m 755 offsite/offsite-poweroff /usr/local/sbin/
+printf 'Include /repo/homelab/offsite/sshd-hlpower.conf\n' >/tmp/sshd_offsite_config
+sshd_offsite() {
+  local cfg
+  cfg=$(sshd -T -f /tmp/sshd_offsite_config -C user=hlpower,host=x,addr=100.64.0.2) || return 1
+  for want in 'forcecommand /usr/local/sbin/offsite-poweroff' 'passwordauthentication no' \
+              'permittty no' 'allowtcpforwarding no'; do
+    grep -qix "$want" <<<"$cfg" || { echo "valeur effective absente : $want"; return 1; }
+  done
+}
+check "sshd : valeurs effectives pour hlpower (PC hors site)" sshd_offsite
 
 # ACL Tailscale : hujson (commentaires // et virgules finales) -> JSON.
 check "ACL tailscale (syntaxe hujson)" python3 - <<'PY'

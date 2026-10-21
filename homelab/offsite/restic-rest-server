@@ -1,0 +1,16 @@
+# À installer sur le PC hors site : /etc/default/restic-rest-server (paquet Debian restic-rest-server, §18.4)
+
+# 127.0.0.1 uniquement : `tailscale serve` l'expose sur le tailnet, et les ACL n'y laissent venir que le HP.
+LISTEN = 127.0.0.1:8000
+
+# Dossier des dépôts, sur le disque de 2 To.
+BACKUP_DIR = /srv/restic
+
+# --append-only : ajouter des snapshots, jamais en supprimer. Un HP compromis ne peut pas effacer
+#   cette copie ; le ménage se fait sur le PC lui-même (§18.6).
+# --private-repos : l'utilisateur "homelab" n'accède qu'à /srv/restic/homelab.
+ARGS = "\
+  --htpasswd-file /etc/restic-rest-server/users.htpasswd \
+  --append-only \
+  --private-repos \
+"
