@@ -1,0 +1,47 @@
+# Scan quotidien des images déployées (VPS + homelab), versions lues dans les .env.example.
+# Un échec = une image à mettre à jour : GitHub envoie un mail quand un workflow planifié échoue.
+# Détail par image dans le résumé du run. Même contrôle en local : security/scan-images.sh all
+name: Vulnérabilités des images
+
+on:
+  schedule:
+    - cron: "17 5 * * *" # tous les jours, 7h17 à Paris (été)
+  workflow_dispatch:
+  push:
+    paths:
+      - "**/docker-compose.yml"
+      - "**/.env.example"
+      - "security/**"
+      - ".github/workflows/vulns.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: list
+        run: echo "list=$(security/scan-images.sh list | jq -Rnc '[inputs]')" >> "$GITHUB_OUTPUT"
+
+  scan:
+    needs: images
+    runs-on: ubuntu-latest
+    # Une image par job : celles d'Immich font plusieurs Go, on évite de remplir le disque.
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.images.outputs.list) }}
+    name: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: security/scan-images.sh scan "$IMAGE"
+        env:
+          IMAGE: ${{ matrix.image }}

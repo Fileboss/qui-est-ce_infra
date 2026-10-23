@@ -2,7 +2,21 @@
 
 Docker Compose stack for the prod deployment of the *qui-est-ce* game.
 
-Runs on a single VPS behind Caddy with auto Let's Encrypt TLS for the four hostnames:
+> **The game is no longer maintained and is shut down** (October 2026). Its services
+> (front, back, Keycloak, Postgres, MinIO) sit in the `qui-est-qui` compose profile, so
+> `docker compose up -d` only starts Caddy, and Caddy answers `410` on the four hostnames.
+> Volumes are kept. To bring it back: restore its sites in the `Caddyfile` (git history),
+> update the images (Keycloak 26.0 and `minio/minio` are out of date), then
+> `docker compose --profile qui-est-qui up -d`. The sections below describe the game as it was.
+
+Shutting down a running VPS (once, after `git pull`):
+
+```sh
+docker compose rm -sf front back keycloak minio minio-init postgres
+docker compose up -d caddy
+```
+
+It ran on a single VPS behind Caddy with auto Let's Encrypt TLS for the four hostnames:
 
 | Service | Public URL | Internal target |
 |---------|-----------|-----------------|
@@ -16,6 +30,10 @@ Only Caddy publishes ports (80/443). All other services live on the internal Doc
 ## Homelab (Immich + Vaultwarden + Memos)
 
 Caddy also fronts `photos.lepgu.fr` (Immich), `vault.lepgu.fr` (Vaultwarden) and `notes.lepgu.fr` (Memos, quick notes; §16), which run on a home server reached through Tailscale (no port open on the home router). The `homelab/` folder holds that server's stack and the encrypted Vaultwarden backup to this VPS. Full procedure: [docs/homelab-setup.md](docs/homelab-setup.md). Requires `HOMELAB_TAILNET_IP` in `.env`.
+
+## Vulnerability scan
+
+`.github/workflows/vulns.yml` scans every deployed image (VPS + homelab) daily, using the versions in the `.env.example` files: keep them in sync with the real `.env`. The job fails when an image ships a vulnerable Node.js or Bun runtime (minimum versions in `security/scan-images.sh`, e.g. Node2Shell / CVE-2026-111497), or a fixable vulnerability that is known exploited (CISA KEV) or in the EPSS top 10 %. Other fixable Critical/High findings are listed in the run summary. Same check locally: `security/scan-images.sh all`.
 
 Local checks (Mac, needs Docker/OrbStack, not in CI): `homelab/tests/run.sh` runs shellcheck, systemd/sshd/ACL validation, bats tests of the backup script (fake restic/curl), `docker compose config` and `caddy validate`.
 

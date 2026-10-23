@@ -8,54 +8,12 @@
     }
 }
 
-qui-est-qui.lepgu.fr {
-    # handle_path strips the matched prefix before forwarding, mirroring the
-    # frontend's dev proxy.conf.json which rewrites ^/api -> "". The back
-    # exposes endpoints at /pack, /game/*, etc. — no /api prefix.
-    handle_path /api/* {
-        reverse_proxy back:8080
-    }
-    # WebSockets keep the /ws prefix: backend endpoints are /ws/game/{id} and
-    # /ws/games literally, and the dev proxy passes them through unchanged.
-    handle /ws/* {
-        reverse_proxy back:8080
-    }
-    handle {
-        reverse_proxy front:80
-    }
-}
-
-api.qui-est-qui.lepgu.fr {
-    reverse_proxy back:8080
-}
-
-auth.qui-est-qui.lepgu.fr {
-
-    @admin path /admin* /admin/*
-
-    @admin_from_home {
-        path /admin* /admin/*
-        # IP publique autorisée pour la console admin, dans le .env du VPS (jamais dans le repo).
-        # Non définie : repli sur 127.0.0.1, donc /admin refusé à tout le monde.
-        remote_ip {$KC_ADMIN_ALLOWED_IP:127.0.0.1}
-    }
-
-    handle @admin_from_home {
-        reverse_proxy keycloak:8080
-    }
-
-    #@kc_admin path /admin/* /realms/master/*
-    #basic_auth @kc_admin {
-    #    admin {$KC_ADMIN_BASIC_AUTH_HASH}
-    #}
-
-    respond @admin "Forbidden 403"
-
-    reverse_proxy keycloak:8080
-}
-
-s3.qui-est-qui.lepgu.fr {
-    reverse_proxy minio:9000
+# Jeu qui-est-qui arrêté (plus maintenu) : plus aucun proxy vers front/back/Keycloak/MinIO.
+# Les noms restent servis pour répondre proprement au lieu d'une erreur TLS.
+# Ancienne config : historique git (avant le commit qui a ajouté ce bloc).
+qui-est-qui.lepgu.fr, api.qui-est-qui.lepgu.fr, auth.qui-est-qui.lepgu.fr, s3.qui-est-qui.lepgu.fr {
+    import security_headers
+    respond "Service arrêté." 410
 }
 
 # --- Homelab (HP à la maison, joint via Tailscale ; aucun port ouvert sur la box) ---

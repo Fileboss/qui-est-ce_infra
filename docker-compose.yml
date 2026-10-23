@@ -1,3 +1,9 @@
+# Le jeu qui-est-qui (front, back et leurs dépendances Keycloak, Postgres, MinIO)
+# n'est plus maintenu : ses services sont dans le profil `qui-est-qui`, donc ignorés
+# par `docker compose up -d`. Seul Caddy tourne (proxy du homelab). Les volumes sont
+# conservés ; pour relancer le jeu : `docker compose --profile qui-est-qui up -d`
+# (après avoir remis ses sites dans le Caddyfile et mis à jour les images).
+
 services:
   caddy:
     image: caddy:2-alpine
@@ -14,18 +20,15 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    depends_on:
-      - front
-      - back
-      - keycloak
-      - minio
 
   front:
+    profiles: [qui-est-qui]
     image: ghcr.io/fileboss/qui-est-ce-front:latest
     restart: unless-stopped
     pull_policy: always
 
   back:
+    profiles: [qui-est-qui]
     image: ghcr.io/fileboss/qui-est-ce-back:latest
     restart: unless-stopped
     pull_policy: always
@@ -55,6 +58,7 @@ services:
         condition: service_healthy
 
   keycloak:
+    profiles: [qui-est-qui]
     image: quay.io/keycloak/keycloak:26.0
     restart: unless-stopped
     # Not --optimized: KC_DB and KC_HEALTH_ENABLED are build-time options that
@@ -99,6 +103,7 @@ services:
   # Healthcheck queries the keycloak DB so it only goes green once the init
   # script has finished — this prevents Keycloak from racing the init phase.
   postgres:
+    profiles: [qui-est-qui]
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -118,6 +123,7 @@ services:
       start_period: 20s
 
   minio:
+    profiles: [qui-est-qui]
     image: minio/minio:latest
     restart: unless-stopped
     command: server /data --console-address ":9001"
@@ -134,6 +140,7 @@ services:
       start_period: 20s
 
   minio-init:
+    profiles: [qui-est-qui]
     image: minio/mc:latest
     restart: "no"
     depends_on:

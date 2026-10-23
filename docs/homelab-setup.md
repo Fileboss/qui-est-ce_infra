@@ -661,6 +661,7 @@ Pour restaurer sur un nouveau serveur : recopie `db.sqlite3`, `rsa_key*`, `attac
 | Backup complet sur disque USB | mensuel | brancher le disque, `hlbackup` (§17.3) |
 | Test de restauration | tous les 3 mois | §9.6 et §17.5 |
 | Espace disque | mensuel | `df -h`, `docker system prune -f` |
+| Vulnérabilités des images | quotidien, automatique | workflow *Vulnérabilités des images* (GitHub Actions) : un mail arrive s'il échoue, mettre à jour l'image signalée puis la version dans le `.env.example`. Voir le README |
 | BIOS HP | annuel | page support HP du 800 G4 Mini, BIOS Q21 ; procédure §2.5 |
 
 ## 11. Dépannage

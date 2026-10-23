@@ -15,6 +15,7 @@ check "bash -n hdd-backup.sh" bash -n backup/hdd-backup.sh
 check "shellcheck hdd-backup.sh" shellcheck backup/hdd-backup.sh
 check "bash -n hlbackup" bash -n backup/hlbackup
 check "shellcheck hlbackup" shellcheck backup/hlbackup
+check "shellcheck scan-images.sh" shellcheck ../security/scan-images.sh
 
 # systemd : l'ExecStart doit exister pour que verify ne se plaigne pas.
 install -m 755 backup/*.sh /usr/local/sbin/
