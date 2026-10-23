@@ -72,7 +72,13 @@ scan() {
   local img=$1 rc=0
   TMPDIR_SCAN=$(mktemp -d)
   echo "== $img"
-  docker pull -q --platform "$PLATFORM" "$img" >/dev/null || { echo "pull impossible : $img"; return 2; }
+  # 3 essais : les registres renvoient parfois un « too many requests » passager.
+  local try
+  for try in 1 2 3; do
+    docker pull -q --platform "$PLATFORM" "$img" >/dev/null && break
+    [ "$try" = 3 ] && { echo "pull impossible : $img"; return 2; }
+    sleep 20
+  done
 
   echo "-- Runtimes JS"
   check_runtimes "$img" || rc=1
