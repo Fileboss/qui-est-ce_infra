@@ -13,7 +13,7 @@ Shutting down a running VPS (once, after `git pull`):
 
 ```sh
 docker compose rm -sf front back keycloak minio minio-init postgres
-docker compose up -d caddy
+docker compose restart caddy   # restart, not up -d: the bind-mounted Caddyfile was replaced by git pull
 ```
 
 It ran on a single VPS behind Caddy with auto Let's Encrypt TLS for the four hostnames:
